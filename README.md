@@ -1,49 +1,86 @@
-# Shared Firebase Note (GitHub Pages compatible)
+# Shared Supabase Note (GitHub Pages compatible)
 
-This version is **frontend-only** so you can host it on **GitHub Pages**.
+This website is static (works on GitHub Pages) and uses Supabase for:
+- password login,
+- shared text storage,
+- realtime updates,
+- commit history.
 
-It uses Firebase for:
-- Authentication (one shared email + password)
-- Firestore document storage
-- Real-time updates across users
+---
 
-## 1) Create Firebase project
+## Very easy setup (follow in order)
 
-1. Go to Firebase Console and create a project.
-2. Enable **Authentication > Email/Password**.
-3. Create one user account (example email: `shared-note@yourdomain.com`) and set the password to your shared password (`wnsdud5999@` if you want).
-4. Enable **Firestore Database** (production mode).
+## 1) In Supabase: create one shared user
 
-## 2) Update config in `main.js`
+- Open **Authentication > Users**
+- Click **Add user**
+- Email: `sharedemail@email.com` (or your own)
+- Password: `wnsdud5999@` (or your own)
 
-Replace `firebaseConfig` placeholders and set `SHARED_EMAIL` to the shared account email.
+## 2) In Supabase: run SQL once
 
-## 3) Firestore security rules
+Open **SQL Editor** and run this:
 
-Use rules like:
+```sql
+create table if not exists public.shared_document (
+  id integer primary key,
+  content text not null default '',
+  updated_at timestamptz not null default now(),
+  updated_by text
+);
 
-```txt
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /shared/main {
-      allow read, write: if request.auth != null;
-      match /commits/{docId} {
-        allow read, write: if request.auth != null;
-      }
-    }
-  }
-}
+create table if not exists public.commits (
+  id bigint generated always as identity primary key,
+  author text,
+  message text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.shared_document enable row level security;
+alter table public.commits enable row level security;
+
+-- only logged-in users can read/write
+create policy "shared_document_auth_rw"
+on public.shared_document
+for all
+using (auth.role() = 'authenticated')
+with check (auth.role() = 'authenticated');
+
+create policy "commits_auth_rw"
+on public.commits
+for all
+using (auth.role() = 'authenticated')
+with check (auth.role() = 'authenticated');
+
+-- realtime
+alter publication supabase_realtime add table public.shared_document;
+alter publication supabase_realtime add table public.commits;
 ```
 
-## 4) Publish on GitHub Pages
+## 3) Get API values from Supabase
 
-1. Push this repo to GitHub.
-2. In repo settings, enable Pages and set source to root branch.
-3. Open your Pages URL.
+Open **Project Settings > API** and copy:
+- Project URL
+- anon public key
+
+## 4) Edit `main.js`
+
+Replace these values:
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `SHARED_EMAIL`
+
+## 5) Deploy on GitHub Pages
+
+- Push to GitHub
+- Repo **Settings > Pages**
+- Deploy from branch root
+- Open your page URL
+
+---
 
 ## Notes
 
-- This is collaborative and real-time.
-- Anyone with the shared password can edit.
-- If you need per-user accounts/roles, expand Auth + security rules.
+- This app is shared: anyone with that password can edit.
+- If login fails, usually `SHARED_EMAIL` or key/url is wrong.
+- If commits fail, SQL/policies were not applied yet.
