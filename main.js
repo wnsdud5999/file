@@ -22,12 +22,12 @@ import {
 
 // 1) Paste your Firebase Web app config here.
 const firebaseConfig = {
-  apiKey: 'REPLACE_ME',
-  authDomain: 'REPLACE_ME',
-  projectId: 'REPLACE_ME',
-  storageBucket: 'REPLACE_ME',
-  messagingSenderId: 'REPLACE_ME',
-  appId: 'REPLACE_ME'
+  apiKey: "AIzaSyDbRIKSvB5OVK9Td8AklSLmayGwh9Geys0",
+  authDomain: "note-2a6f8.firebaseapp.com",
+  projectId: "note-2a6f8",
+  storageBucket: "note-2a6f8.firebasestorage.app",
+  messagingSenderId: "556359673920",
+  appId: "1:556359673920:web:0e56743418cb667d6797a5",
 };
 
 // 2) Shared login email. Users type only password in UI.
