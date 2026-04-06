@@ -1,42 +1,49 @@
-# Shared Note Website (Notion-like simple version)
+# Shared Firebase Note (GitHub Pages compatible)
 
-A tiny collaborative text editor website:
-- asks password before entering,
-- shows last committed text,
-- anyone with password can edit,
-- clicking **Commit changes** publishes new text to everyone (polling every 2 seconds).
+This version is **frontend-only** so you can host it on **GitHub Pages**.
 
-## Run locally
+It uses Firebase for:
+- Authentication (one shared email + password)
+- Firestore document storage
+- Real-time updates across users
 
-```bash
-npm start
+## 1) Create Firebase project
+
+1. Go to Firebase Console and create a project.
+2. Enable **Authentication > Email/Password**.
+3. Create one user account (example email: `shared-note@yourdomain.com`) and set the password to your shared password (`wnsdud5999@` if you want).
+4. Enable **Firestore Database** (production mode).
+
+## 2) Update config in `main.js`
+
+Replace `firebaseConfig` placeholders and set `SHARED_EMAIL` to the shared account email.
+
+## 3) Firestore security rules
+
+Use rules like:
+
+```txt
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /shared/main {
+      allow read, write: if request.auth != null;
+      match /commits/{docId} {
+        allow read, write: if request.auth != null;
+      }
+    }
+  }
+}
 ```
 
-Open: `http://localhost:3000`
+## 4) Publish on GitHub Pages
 
-## Password / security notes
+1. Push this repo to GitHub.
+2. In repo settings, enable Pages and set source to root branch.
+3. Open your Pages URL.
 
-- By default, the app accepts password `wnsdud5999@` (because you asked for that).
-- Safer setup: set a hashed password in `.env` (`EDITOR_PASSWORD_HASH`) and custom salt.
+## Notes
 
-Generate hash example:
-
-```bash
-node -e "const c=require('crypto');console.log(c.createHash('sha256').update('change-this-salt:your-strong-password').digest('hex'))"
-```
-
-Then set:
-
-- `PASSWORD_SALT=change-this-salt`
-- `EDITOR_PASSWORD_HASH=<generated-hash>`
-
-Other security notes:
-- Session cookie is signed (HMAC SHA-256) so users cannot forge login by editing cookie.
-- This is a lightweight app; for production use HTTPS and proper user accounts.
-
-## Data storage
-
-- Current document: `data/document.txt`
-- Commit log: `data/commits.json`
-
-The latest committed document is what new visitors see after logging in.
+- This is collaborative and real-time.
+- Anyone with the shared password can edit.
+- If you need per-user accounts/roles, expand Auth + security rules.

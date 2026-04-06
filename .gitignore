@@ -1,4 +1,1 @@
-node_modules/
-.env
-data/document.txt
-data/commits.json
+.DS_Store

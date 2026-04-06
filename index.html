@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Shared Firebase Note</title>
+    <style>
+      :root { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; color: #101828; }
+      body { margin: 0; background: #f2f4f7; }
+      .container { max-width: 980px; margin: 28px auto; padding: 0 16px; }
+      .card { background: #fff; border-radius: 14px; box-shadow: 0 8px 24px rgba(16,24,40,0.08); padding: 18px; }
+      h1 { margin: 0 0 12px; font-size: 1.35rem; }
+      textarea { width: 100%; min-height: 440px; border: 1px solid #d0d5dd; border-radius: 12px; padding: 12px; box-sizing: border-box; resize: vertical; }
+      .row { display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+      input, button { border: 1px solid #d0d5dd; border-radius: 10px; padding: 10px 12px; font-size: 0.92rem; }
+      button { background: #6941c6; color: #fff; border-color: #6941c6; cursor: pointer; }
+      button.secondary { background: #fff; color: #344054; border-color: #d0d5dd; }
+      .status { font-size: 0.9rem; color: #475467; }
+      .commits { margin-top: 14px; padding-top: 10px; border-top: 1px solid #eaecf0; font-size: 0.88rem; color: #475467; }
+      .commits li { margin: 6px 0; }
+      .hidden { display: none; }
+      #loginCard { max-width: 430px; margin: 90px auto; }
+      code { background: #f2f4f7; padding: 2px 6px; border-radius: 6px; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div id="loginCard" class="card">
+        <h1>Enter shared password</h1>
+        <p class="status">This signs into one shared Firebase account for your team.</p>
+        <div class="row">
+          <input id="passwordInput" type="password" placeholder="Password" style="flex: 1" />
+          <button id="loginBtn">Unlock</button>
+        </div>
+        <p id="loginStatus" class="status"></p>
+      </div>
+
+      <div id="editorCard" class="card hidden">
+        <h1>Shared text document</h1>
+        <textarea id="editor" placeholder="Write here..."></textarea>
+        <div class="row">
+          <input id="authorInput" placeholder="Your name (optional)" />
+          <input id="messageInput" placeholder="Commit message (optional)" style="flex: 1" />
+          <button id="commitBtn">Commit changes</button>
+          <button id="logoutBtn" class="secondary">Logout</button>
+        </div>
+        <p id="editorStatus" class="status"></p>
+        <div class="commits">
+          <strong>Recent commits</strong>
+          <ul id="commitList"></ul>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
