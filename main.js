@@ -22,12 +22,12 @@ import {
 
 // Fill these with your Firebase project settings.
 const firebaseConfig = {
-  apiKey: 'REPLACE_ME',
-  authDomain: 'REPLACE_ME.firebaseapp.com',
-  projectId: 'REPLACE_ME',
-  storageBucket: 'REPLACE_ME.appspot.com',
-  messagingSenderId: 'REPLACE_ME',
-  appId: 'REPLACE_ME'
+  apiKey: "AIzaSyDbRIKSvB5OVK9Td8AklSLmayGwh9Geys0",
+  authDomain: "note-2a6f8.firebaseapp.com",
+  projectId: "note-2a6f8",
+  storageBucket: "note-2a6f8.firebasestorage.app",
+  messagingSenderId: "556359673920",
+  appId: "1:556359673920:web:0e56743418cb667d6797a5",
 };
 
 // One shared account for everyone with your password.
