@@ -1,0 +1,11 @@
+{
+  "name": "note-collab-editor",
+  "version": "1.0.0",
+  "description": "Small password-protected collaborative text editor",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "check": "node --check server.js"
+  }
+}
