@@ -3,7 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 // ====== CHANGE THESE 3 VALUES ======
 const SUPABASE_URL = 'REPLACE_WITH_YOUR_SUPABASE_URL';
 const SUPABASE_ANON_KEY = 'REPLACE_WITH_YOUR_SUPABASE_ANON_KEY';
-const UPLOAD_PASSWORD = 'change-this-upload-password';
+const SUPABASE_UPLOAD_EMAIL = 'upload-user@example.com';
 // ===================================
 
 const BUCKET = 'private-send-files';
@@ -16,11 +16,17 @@ const downloadCodeInput = document.getElementById('downloadCodeInput');
 const downloadBtn = document.getElementById('downloadBtn');
 const downloadStatus = document.getElementById('downloadStatus');
 
-const uploadPasswordInput = document.getElementById('uploadPasswordInput');
+const uploadLoginPasswordInput = document.getElementById('uploadLoginPasswordInput');
+const uploadLoginBtn = document.getElementById('uploadLoginBtn');
+const uploadLogoutBtn = document.getElementById('uploadLogoutBtn');
+const uploadAuthStatus = document.getElementById('uploadAuthStatus');
+
 const fileInput = document.getElementById('fileInput');
 const uploadBtn = document.getElementById('uploadBtn');
 const uploadStatus = document.getElementById('uploadStatus');
 const generatedCode = document.getElementById('generatedCode');
+
+let uploadUser = null;
 
 function setStatus(target, message, error = false) {
   target.textContent = message;
@@ -39,6 +45,19 @@ function cleanFileName(name) {
   return String(name || 'file.bin').replace(/[^a-zA-Z0-9._\- ()]/g, '_');
 }
 
+function refreshUploadAuthUI() {
+  const loggedIn = Boolean(uploadUser);
+  uploadBtn.disabled = !loggedIn;
+  fileInput.disabled = !loggedIn;
+  uploadLogoutBtn.style.display = loggedIn ? 'inline-block' : 'none';
+
+  if (loggedIn) {
+    setStatus(uploadAuthStatus, `Upload login active: ${uploadUser.email}`);
+  } else {
+    setStatus(uploadAuthStatus, 'Upload login required.');
+  }
+}
+
 async function createUniqueCode() {
   for (let i = 0; i < 20; i += 1) {
     const code = randomCode();
@@ -54,17 +73,50 @@ async function createUniqueCode() {
   throw new Error('Could not generate code. Try again.');
 }
 
-async function uploadFile() {
-  const file = fileInput.files && fileInput.files[0];
-  const uploadPassword = uploadPasswordInput.value;
-
+async function loginForUpload() {
   if (SUPABASE_URL.includes('REPLACE_') || SUPABASE_ANON_KEY.includes('REPLACE_')) {
-    setStatus(uploadStatus, 'Please edit main.js and set SUPABASE_URL + SUPABASE_ANON_KEY first.', true);
+    setStatus(uploadAuthStatus, 'Please set SUPABASE_URL + SUPABASE_ANON_KEY in main.js.', true);
     return;
   }
 
-  if (uploadPassword !== UPLOAD_PASSWORD) {
-    setStatus(uploadStatus, 'Wrong upload password.', true);
+  const password = uploadLoginPasswordInput.value;
+  if (!password) {
+    setStatus(uploadAuthStatus, 'Enter upload account password.', true);
+    return;
+  }
+
+  uploadLoginBtn.disabled = true;
+
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: SUPABASE_UPLOAD_EMAIL,
+      password
+    });
+
+    if (error) throw error;
+    uploadUser = data.user;
+    uploadLoginPasswordInput.value = '';
+    refreshUploadAuthUI();
+    setStatus(uploadStatus, 'Now you can upload files.');
+  } catch (error) {
+    setStatus(uploadAuthStatus, error.message || 'Upload login failed.', true);
+  } finally {
+    uploadLoginBtn.disabled = false;
+  }
+}
+
+async function logoutUpload() {
+  await supabase.auth.signOut();
+  uploadUser = null;
+  refreshUploadAuthUI();
+  setStatus(uploadStatus, 'Upload login removed.');
+}
+
+async function uploadFile() {
+  const file = fileInput.files && fileInput.files[0];
+
+  if (!uploadUser) {
+    setStatus(uploadStatus, 'Please login for upload first.', true);
     return;
   }
 
@@ -122,7 +174,7 @@ async function downloadWithCode() {
   downloadCodeInput.value = code;
 
   if (SUPABASE_URL.includes('REPLACE_') || SUPABASE_ANON_KEY.includes('REPLACE_')) {
-    setStatus(downloadStatus, 'Please edit main.js and set SUPABASE_URL + SUPABASE_ANON_KEY first.', true);
+    setStatus(downloadStatus, 'Please set SUPABASE_URL + SUPABASE_ANON_KEY in main.js.', true);
     return;
   }
 
@@ -185,5 +237,13 @@ downloadCodeInput.addEventListener('input', () => {
   downloadCodeInput.value = onlyDigits(downloadCodeInput.value);
 });
 
+uploadLoginBtn.addEventListener('click', loginForUpload);
+uploadLogoutBtn.addEventListener('click', logoutUpload);
 downloadBtn.addEventListener('click', downloadWithCode);
 uploadBtn.addEventListener('click', uploadFile);
+
+(async () => {
+  const { data } = await supabase.auth.getSession();
+  uploadUser = data.session?.user || null;
+  refreshUploadAuthUI();
+})();

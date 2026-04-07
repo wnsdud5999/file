@@ -41,11 +41,14 @@
         </section>
 
         <section class="card">
-          <h1>Upload (password)</h1>
-          <p>Upload needs password. Share only the generated 6-digit code.</p>
+          <h1>Upload (Supabase Auth)</h1>
+          <p>Login with upload account first, then upload.</p>
           <div class="row">
-            <input id="uploadPasswordInput" type="password" placeholder="Upload password" />
+            <input id="uploadLoginPasswordInput" type="password" placeholder="Upload account password" />
+            <button id="uploadLoginBtn">Login</button>
+            <button id="uploadLogoutBtn" style="display:none">Logout</button>
           </div>
+          <div id="uploadAuthStatus" class="status"></div>
           <div class="row">
             <input id="fileInput" type="file" />
             <button id="uploadBtn">Upload</button>

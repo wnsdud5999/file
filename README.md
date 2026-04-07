@@ -1,31 +1,35 @@
 # Private Send (Supabase only, no custom server)
 
-You were right — now this is **Supabase only**.
-No Node server needed for normal use.
+Yes — this is Supabase-only.
+No Node backend needed for upload/download flow.
 
 ## What it does
-1. Upload file (with upload password)
-2. Get random 6-digit code
-3. Other person enters code to download
-4. After download, file/code is deleted
-
-Upload limit is **50 MB max**.
+1. Upload user logs in (Supabase Auth email/password)
+2. Upload file (max 50 MB)
+3. Get random 6-digit code
+4. Other person enters code to download
+5. File/code gets deleted after download
 
 ---
 
-## Easy setup (very simple)
+## Step-by-step setup
 
 ### Step 1) Create Supabase project
 - Go to https://supabase.com
 - Create project
 
 ### Step 2) Create bucket
-- Open project -> Storage -> New bucket
+- Storage -> New bucket
 - Name: `private-send-files`
-- Set bucket to **Private**
+- Make it **Private**
 
-### Step 3) Create table
-Open SQL Editor and run:
+### Step 3) Create upload auth user
+- Authentication -> Users -> Add user
+- Email example: `upload-user@example.com`
+- Set your own password (this is upload login password)
+
+### Step 4) Create table + policies
+Open SQL Editor and run this:
 
 ```sql
 create table if not exists public.transfers (
@@ -38,26 +42,24 @@ create table if not exists public.transfers (
 
 alter table public.transfers enable row level security;
 
+-- downloader can find and delete by code
 create policy "anon can read transfers"
 on public.transfers for select
 to anon using (true);
 
-create policy "anon can insert transfers"
-on public.transfers for insert
-to anon with check (true);
-
 create policy "anon can delete transfers"
 on public.transfers for delete
 to anon using (true);
-```
 
-### Step 4) Create storage policies
-Run this SQL too:
+-- uploader must be logged-in (authenticated)
+create policy "authenticated can insert transfers"
+on public.transfers for insert
+to authenticated with check (true);
 
-```sql
-create policy "anon can upload files"
+-- storage policies
+create policy "authenticated can upload files"
 on storage.objects for insert
-to anon with check (bucket_id = 'private-send-files');
+to authenticated with check (bucket_id = 'private-send-files');
 
 create policy "anon can read files"
 on storage.objects for select
@@ -68,36 +70,29 @@ on storage.objects for delete
 to anon using (bucket_id = 'private-send-files');
 ```
 
-### Step 5) Get Supabase keys
-Project Settings -> API -> copy:
+### Step 5) Get Supabase values
+Project Settings -> API:
 - Project URL
 - anon public key
 
 ### Step 6) Edit `main.js`
-At top of `main.js`, replace these 3 values:
+Set these values at the top:
 
 ```js
-const SUPABASE_URL = 'REPLACE_WITH_YOUR_SUPABASE_URL';
-const SUPABASE_ANON_KEY = 'REPLACE_WITH_YOUR_SUPABASE_ANON_KEY';
-const UPLOAD_PASSWORD = 'change-this-upload-password';
+const SUPABASE_URL = 'YOUR_PROJECT_URL';
+const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY';
+const SUPABASE_UPLOAD_EMAIL = 'upload-user@example.com';
 ```
 
-### Step 7) Open website
-Just open `index.html` (or deploy to GitHub Pages / Netlify / Vercel).
+`SUPABASE_UPLOAD_EMAIL` must match the user you created in Step 3.
+
+### Step 7) Run site
+Open `index.html` directly or deploy static hosting (GitHub Pages/Netlify/Vercel).
 
 ---
 
 ## How to change upload password
-Open `main.js` and change:
+Change password of upload user in Supabase:
+- Authentication -> Users -> select upload user -> reset/update password
 
-```js
-const UPLOAD_PASSWORD = 'new-password-here';
-```
-
-Save and redeploy/reload.
-
----
-
-## Important note
-Because this is client-only (no server), upload password is in frontend code.
-So this is simple protection, not military-grade security.
+No code change needed unless you changed upload email.
