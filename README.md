@@ -1,81 +1,57 @@
-# Shared Firebase Notes (GitHub Pages compatible)
+# Personal Cloud with Supabase (password protected)
 
-This website is static (works on GitHub Pages) and uses Firebase for:
+This is a small web app for personal cloud storage:
 - password login,
-- multiple notes (create/edit title/content/delete),
-- per-note commit history,
-- realtime updates.
+- upload files,
+- download files,
+- delete files,
+- file list with size + updated time.
 
-No backend server is needed.
+The app keeps a simple password gate on the server, then uses Supabase Storage behind the scenes.
 
----
+## Setup
 
-## Easy setup (step by step)
+### 1) Create Supabase project + bucket
 
-## 1) In Firebase: create project + web app
+1. Create a project in Supabase.
+2. Create a bucket (for example `personal-cloud`).
+3. Copy these values from project settings:
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`
 
-1. Open Firebase Console and create a project.
-2. Add a **Web app**.
-3. Copy the web config values (`apiKey`, `authDomain`, `projectId`, `storageBucket`, `messagingSenderId`, `appId`).
+### 2) Configure environment variables
 
-## 2) In Firebase: enable login and create shared user
+Create a `.env` (or set env vars in your host):
 
-1. Open **Authentication → Sign-in method** and enable **Email/Password**.
-2. Open **Authentication → Users** and create one user:
-   - Email: `sharedemail@email.com` (or your own)
-   - Password: `wnsdud5999@` (or your own)
-
-## 3) In Firebase: create Firestore database
-
-1. Open **Firestore Database** and create database in production mode.
-2. Open **Rules** and paste this:
-
-```txt
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /notes/{noteId} {
-      allow read, write: if request.auth != null;
-
-      match /commits/{commitId} {
-        allow read, write: if request.auth != null;
-      }
-    }
-  }
-}
+```bash
+PORT=3000
+SESSION_SECRET=replace-with-long-random-value
+PASSWORD_SALT=replace-with-random-salt
+EDITOR_PASSWORD_HASH=<optional sha256 hash>
+SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
+SUPABASE_BUCKET=personal-cloud
 ```
 
-## 4) Edit `main.js`
+Password behavior:
+- If `EDITOR_PASSWORD_HASH` is set, it is used.
+- Otherwise it falls back to default password: `wnsdud5999@`.
 
-Replace these values:
-- all `REPLACE_ME` entries in `firebaseConfig`
-- `SHARED_EMAIL`
+To generate your own password hash:
 
-Important:
-- The entered password on the site must match the shared Firebase user password.
+```bash
+node -e "const c=require('crypto'); const salt='YOUR_SALT'; const pw='YOUR_PASSWORD'; console.log(c.createHash('sha256').update(`${salt}:${pw}`).digest('hex'))"
+```
 
-## 5) Deploy on GitHub Pages
+### 3) Run
 
-1. Push this repo to GitHub.
-2. Open **Settings → Pages**.
-3. Deploy from branch root.
-4. Open your Pages URL.
+```bash
+npm start
+```
 
----
+Open `http://localhost:3000`.
 
-## What to do on the website
+## Notes
 
-- Enter shared password.
-- Click **+ New note** to create notes.
-- Edit note title + text.
-- Click **Commit changes**.
-- See recent commits for the selected note.
-- Click **Delete note** if needed.
-
----
-
-## Troubleshooting
-
-- **Login failed (`auth/api-key-not-valid`)**: your `firebaseConfig` still has wrong or placeholder values.
-- **Login failed (`auth/invalid-credential`)**: `SHARED_EMAIL`, password, or project is mismatched.
-- **No notes visible / write errors**: Firestore rules were not applied.
+- This app uses `SUPABASE_SERVICE_ROLE_KEY` on the server only (never expose it in client code).
+- Upload API currently accepts base64 JSON payloads, intended for personal use and moderate file sizes.

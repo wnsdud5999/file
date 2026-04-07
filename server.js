@@ -5,15 +5,16 @@ const http = require('http');
 const { URL } = require('url');
 
 const PORT = Number(process.env.PORT || 3000);
-const DATA_DIR = path.join(__dirname, 'data');
-const DOC_FILE = path.join(DATA_DIR, 'document.txt');
-const COMMITS_FILE = path.join(DATA_DIR, 'commits.json');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
 const DEFAULT_PASSWORD = 'wnsdud5999@';
 const PASSWORD_SALT = process.env.PASSWORD_SALT || 'editor-static-salt-change-me';
 const configuredHash = process.env.EDITOR_PASSWORD_HASH || '';
 const sessionSecret = process.env.SESSION_SECRET || 'replace-this-with-a-long-random-string';
+
+const SUPABASE_URL = process.env.SUPABASE_URL || '';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const SUPABASE_BUCKET = process.env.SUPABASE_BUCKET || 'personal-cloud';
 
 function sha256(input) {
   return crypto.createHash('sha256').update(input).digest('hex');
@@ -24,23 +25,6 @@ function derivePasswordHash(plainPassword) {
 }
 
 const effectivePasswordHash = configuredHash || derivePasswordHash(DEFAULT_PASSWORD);
-
-function ensureDataFiles() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (!fs.existsSync(DOC_FILE)) {
-    fs.writeFileSync(DOC_FILE, 'Welcome!\\n\\nThis is a shared document. Press "Commit changes" to publish your edits.\\n');
-  }
-  if (!fs.existsSync(COMMITS_FILE)) {
-    fs.writeFileSync(
-      COMMITS_FILE,
-      JSON.stringify(
-        [{ id: crypto.randomUUID(), ts: new Date().toISOString(), author: 'system', message: 'Initial document created' }],
-        null,
-        2
-      )
-    );
-  }
-}
 
 function parseCookies(req) {
   const raw = req.headers.cookie;
@@ -84,12 +68,12 @@ function json(res, statusCode, payload, headers = {}) {
   res.end(JSON.stringify(payload));
 }
 
-function readBody(req) {
+function readBody(req, maxBytes = 35_000_000) {
   return new Promise((resolve, reject) => {
     let raw = '';
     req.on('data', (chunk) => {
       raw += chunk;
-      if (raw.length > 1_000_000) {
+      if (raw.length > maxBytes) {
         reject(new Error('Body too large'));
         req.destroy();
       }
@@ -104,27 +88,6 @@ function readBody(req) {
     });
     req.on('error', reject);
   });
-}
-
-function readDocument() {
-  return fs.readFileSync(DOC_FILE, 'utf8');
-}
-
-function readCommits() {
-  return JSON.parse(fs.readFileSync(COMMITS_FILE, 'utf8'));
-}
-
-function appendCommit(author, message) {
-  const commits = readCommits();
-  const commit = {
-    id: crypto.randomUUID(),
-    ts: new Date().toISOString(),
-    author: author || 'anonymous',
-    message: message || 'Updated shared document'
-  };
-  commits.push(commit);
-  fs.writeFileSync(COMMITS_FILE, JSON.stringify(commits.slice(-100), null, 2));
-  return commit;
 }
 
 function mimeType(filePath) {
@@ -155,7 +118,98 @@ function serveStatic(req, res, pathname) {
   fs.createReadStream(absolute).pipe(res);
 }
 
-ensureDataFiles();
+function requireSupabaseConfig() {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
+  }
+}
+
+function cleanFilePath(filePath) {
+  const trimmed = String(filePath || '').trim();
+  if (!trimmed || trimmed.length > 200) throw new Error('Invalid file path');
+  if (trimmed.includes('..') || trimmed.startsWith('/')) throw new Error('Invalid file path');
+  if (!/^[a-zA-Z0-9._\-/ ]+$/.test(trimmed)) throw new Error('Invalid file path');
+  return trimmed.replace(/\\/g, '/');
+}
+
+async function supabaseFetch(endpoint, init = {}) {
+  const res = await fetch(`${SUPABASE_URL}${endpoint}`, {
+    ...init,
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      ...(init.headers || {})
+    }
+  });
+
+  return res;
+}
+
+async function listFiles() {
+  const res = await supabaseFetch(`/storage/v1/object/list/${encodeURIComponent(SUPABASE_BUCKET)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      limit: 200,
+      offset: 0,
+      sortBy: { column: 'name', order: 'asc' }
+    })
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`List failed: ${res.status} ${text}`);
+  }
+
+  const items = await res.json();
+  return items
+    .filter((item) => item && item.name && !item.id)
+    .map((item) => ({
+      name: item.name,
+      size: item.metadata?.size || 0,
+      updated_at: item.updated_at || item.created_at || null
+    }));
+}
+
+async function uploadFile(filePath, buffer, contentType = 'application/octet-stream') {
+  const endpoint = `/storage/v1/object/${encodeURIComponent(SUPABASE_BUCKET)}/${encodeURI(filePath)}`;
+  const res = await supabaseFetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': contentType,
+      'x-upsert': 'true'
+    },
+    body: buffer
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Upload failed: ${res.status} ${text}`);
+  }
+}
+
+async function downloadFile(filePath) {
+  const endpoint = `/storage/v1/object/${encodeURIComponent(SUPABASE_BUCKET)}/${encodeURI(filePath)}`;
+  const res = await supabaseFetch(endpoint, { method: 'GET' });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Download failed: ${res.status} ${text}`);
+  }
+  return res;
+}
+
+async function deleteFile(filePath) {
+  const res = await supabaseFetch(`/storage/v1/object/${encodeURIComponent(SUPABASE_BUCKET)}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prefixes: [filePath] })
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Delete failed: ${res.status} ${text}`);
+  }
+}
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -181,29 +235,49 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true }, { 'Set-Cookie': 'editor_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0' });
     }
 
-    if (req.method === 'GET' && pathname === '/api/document') {
+    if (pathname.startsWith('/api/')) {
       if (!isAuthorized(req)) return json(res, 401, { error: 'Unauthorized' });
-      return json(res, 200, { content: readDocument(), commits: readCommits().slice(-20).reverse() });
+      requireSupabaseConfig();
     }
 
-    if (req.method === 'POST' && pathname === '/api/commit') {
-      if (!isAuthorized(req)) return json(res, 401, { error: 'Unauthorized' });
+    if (req.method === 'GET' && pathname === '/api/files') {
+      const files = await listFiles();
+      return json(res, 200, { files });
+    }
 
+    if (req.method === 'POST' && pathname === '/api/upload') {
       const body = await readBody(req);
-      if (typeof body.content !== 'string') return json(res, 400, { error: 'content is required' });
+      const fileName = cleanFilePath(body.fileName);
+      const contentBase64 = String(body.contentBase64 || '');
+      const contentType = typeof body.contentType === 'string' ? body.contentType : 'application/octet-stream';
+      if (!contentBase64) return json(res, 400, { error: 'contentBase64 is required' });
 
-      fs.writeFileSync(DOC_FILE, body.content, 'utf8');
-      const commit = appendCommit(body.author, body.message);
-      return json(res, 200, { ok: true, commit });
+      const buffer = Buffer.from(contentBase64, 'base64');
+      await uploadFile(fileName, buffer, contentType);
+
+      return json(res, 200, { ok: true });
     }
 
-    if (req.method === 'GET' && pathname === '/api/poll') {
-      if (!isAuthorized(req)) return json(res, 401, { error: 'Unauthorized' });
-      const clientHash = url.searchParams.get('hash') || '';
-      const content = readDocument();
-      const hash = sha256(content);
-      if (clientHash === hash) return json(res, 200, { changed: false, hash });
-      return json(res, 200, { changed: true, hash, content, commits: readCommits().slice(-20).reverse() });
+    if (req.method === 'GET' && pathname === '/api/download') {
+      const filePath = cleanFilePath(url.searchParams.get('path') || '');
+      const fileRes = await downloadFile(filePath);
+      const contentType = fileRes.headers.get('content-type') || 'application/octet-stream';
+      const arrayBuffer = await fileRes.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      res.writeHead(200, {
+        'Content-Type': contentType,
+        'Content-Length': buffer.length,
+        'Content-Disposition': `attachment; filename="${path.basename(filePath).replace(/"/g, '')}"`
+      });
+      res.end(buffer);
+      return;
+    }
+
+    if (req.method === 'DELETE' && pathname === '/api/file') {
+      const filePath = cleanFilePath(url.searchParams.get('path') || '');
+      await deleteFile(filePath);
+      return json(res, 200, { ok: true });
     }
 
     if (req.method === 'GET') {
@@ -214,10 +288,10 @@ const server = http.createServer(async (req, res) => {
     res.end('Method not allowed');
   } catch (error) {
     console.error(error);
-    json(res, 500, { error: 'Server error' });
+    json(res, 500, { error: error.message || 'Server error' });
   }
 });
 
 server.listen(PORT, () => {
-  console.log(`Shared editor running at http://localhost:${PORT}`);
+  console.log(`Personal cloud running at http://localhost:${PORT}`);
 });
