@@ -1,142 +1,126 @@
-const loginCard = document.getElementById('loginCard');
-const editorCard = document.getElementById('editorCard');
-const passwordInput = document.getElementById('passwordInput');
-const loginBtn = document.getElementById('loginBtn');
-const loginStatus = document.getElementById('loginStatus');
+const downloadCodeInput = document.getElementById('downloadCodeInput');
+const downloadBtn = document.getElementById('downloadBtn');
+const downloadStatus = document.getElementById('downloadStatus');
 
-const editor = document.getElementById('editor');
-const authorInput = document.getElementById('authorInput');
-const messageInput = document.getElementById('messageInput');
-const commitBtn = document.getElementById('commitBtn');
-const logoutBtn = document.getElementById('logoutBtn');
-const editorStatus = document.getElementById('editorStatus');
-const commitList = document.getElementById('commitList');
+const uploadPasswordInput = document.getElementById('uploadPasswordInput');
+const fileInput = document.getElementById('fileInput');
+const uploadBtn = document.getElementById('uploadBtn');
+const uploadStatus = document.getElementById('uploadStatus');
+const generatedCode = document.getElementById('generatedCode');
 
-let pollTimer;
-let currentHash = '';
-
-function setStatus(message, error = false) {
-  editorStatus.textContent = message;
-  editorStatus.style.color = error ? '#b42318' : '#475467';
+function setStatus(target, message, error = false) {
+  target.textContent = message;
+  target.style.color = error ? '#b42318' : '#475467';
 }
 
-function renderCommits(commits = []) {
-  commitList.innerHTML = '';
-  commits.forEach((c) => {
-    const li = document.createElement('li');
-    const ts = new Date(c.ts).toLocaleString();
-    li.textContent = `[${ts}] ${c.author}: ${c.message}`;
-    commitList.appendChild(li);
-  });
+function onlyDigits(value) {
+  return String(value || '').replace(/\D/g, '').slice(0, 6);
 }
 
-async function pollUpdates() {
-  const res = await fetch(`/api/poll?hash=${encodeURIComponent(currentHash)}`);
-  if (!res.ok) return;
-  const data = await res.json();
-  currentHash = data.hash || currentHash;
-  if (data.changed) {
-    editor.value = data.content;
-    renderCommits(data.commits || []);
-    setStatus('Document updated by another user.');
+async function toBase64(file) {
+  const buffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
   }
+
+  return btoa(binary);
 }
 
-async function startPolling() {
-  clearInterval(pollTimer);
-  pollTimer = setInterval(async () => {
-    try {
-      await pollUpdates();
-    } catch {
-      // ignore polling hiccups
-    }
-  }, 2000);
-}
+async function uploadFile() {
+  const file = fileInput.files && fileInput.files[0];
+  const uploadPassword = uploadPasswordInput.value;
 
-async function loadDocument() {
-  const res = await fetch('/api/document');
-  if (!res.ok) {
-    throw new Error('Session expired');
-  }
-  const data = await res.json();
-  editor.value = data.content;
-  renderCommits(data.commits);
-  currentHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(editor.value)).then((buf) =>
-    Array.from(new Uint8Array(buf))
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('')
-  );
-  await startPolling();
-}
-
-async function showEditor() {
-  loginCard.classList.add('hidden');
-  editorCard.classList.remove('hidden');
-  await loadDocument();
-}
-
-loginBtn.addEventListener('click', async () => {
-  loginStatus.textContent = '';
-  const password = passwordInput.value;
-
-  const res = await fetch('/api/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password })
-  });
-
-  if (!res.ok) {
-    loginStatus.textContent = 'Wrong password.';
-    loginStatus.style.color = '#b42318';
+  if (!uploadPassword) {
+    setStatus(uploadStatus, 'Enter upload password first.', true);
     return;
   }
 
-  await showEditor();
-});
+  if (!file) {
+    setStatus(uploadStatus, 'Pick a file first.', true);
+    return;
+  }
 
-commitBtn.addEventListener('click', async () => {
-  commitBtn.disabled = true;
-  setStatus('Committing...');
+  uploadBtn.disabled = true;
+  generatedCode.textContent = '';
+  setStatus(uploadStatus, 'Uploading...');
 
   try {
-    const res = await fetch('/api/commit', {
+    const contentBase64 = await toBase64(file);
+
+    const res = await fetch('/api/upload', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        content: editor.value,
-        author: authorInput.value.trim() || 'anonymous',
-        message: messageInput.value.trim() || 'Updated shared document'
+        uploadPassword,
+        fileName: file.name,
+        contentBase64,
+        contentType: file.type || 'application/octet-stream'
       })
     });
 
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Upload failed');
+
+    setStatus(uploadStatus, 'Upload done. Share this code:');
+    generatedCode.textContent = data.code;
+    fileInput.value = '';
+  } catch (error) {
+    setStatus(uploadStatus, error.message, true);
+  } finally {
+    uploadBtn.disabled = false;
+  }
+}
+
+async function downloadWithCode() {
+  const code = onlyDigits(downloadCodeInput.value);
+  downloadCodeInput.value = code;
+
+  if (code.length !== 6) {
+    setStatus(downloadStatus, 'Code must be 6 digits.', true);
+    return;
+  }
+
+  downloadBtn.disabled = true;
+  setStatus(downloadStatus, 'Checking code...');
+
+  try {
+    const res = await fetch(`/api/download?code=${encodeURIComponent(code)}`);
+
     if (!res.ok) {
-      throw new Error('Could not commit');
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Download failed');
     }
 
-    messageInput.value = '';
-    await pollUpdates();
-    setStatus('Committed! Everyone will see this update.');
-  } catch (err) {
-    setStatus(err.message, true);
+    const blob = await res.blob();
+    const cd = res.headers.get('content-disposition') || '';
+    const match = cd.match(/filename="?([^\"]+)"?/i);
+    const fileName = match ? match[1] : `download-${code}`;
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
+    setStatus(downloadStatus, 'Downloaded. This code is now deleted forever.');
+    downloadCodeInput.value = '';
+  } catch (error) {
+    setStatus(downloadStatus, error.message, true);
   } finally {
-    commitBtn.disabled = false;
+    downloadBtn.disabled = false;
   }
+}
+
+downloadCodeInput.addEventListener('input', () => {
+  downloadCodeInput.value = onlyDigits(downloadCodeInput.value);
 });
 
-logoutBtn.addEventListener('click', async () => {
-  clearInterval(pollTimer);
-  await fetch('/api/logout', { method: 'POST' });
-  editorCard.classList.add('hidden');
-  loginCard.classList.remove('hidden');
-  passwordInput.value = '';
-  loginStatus.textContent = 'Logged out.';
-});
-
-(async () => {
-  try {
-    await showEditor();
-  } catch {
-    loginCard.classList.remove('hidden');
-    editorCard.classList.add('hidden');
-  }
-})();
+downloadBtn.addEventListener('click', downloadWithCode);
+uploadBtn.addEventListener('click', uploadFile);
