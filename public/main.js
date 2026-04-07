@@ -1,142 +1,249 @@
-const loginCard = document.getElementById('loginCard');
-const editorCard = document.getElementById('editorCard');
-const passwordInput = document.getElementById('passwordInput');
-const loginBtn = document.getElementById('loginBtn');
-const loginStatus = document.getElementById('loginStatus');
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const editor = document.getElementById('editor');
-const authorInput = document.getElementById('authorInput');
-const messageInput = document.getElementById('messageInput');
-const commitBtn = document.getElementById('commitBtn');
-const logoutBtn = document.getElementById('logoutBtn');
-const editorStatus = document.getElementById('editorStatus');
-const commitList = document.getElementById('commitList');
+// ====== CHANGE THESE 3 VALUES ======
+const SUPABASE_URL = 'REPLACE_WITH_YOUR_SUPABASE_URL';
+const SUPABASE_ANON_KEY = 'REPLACE_WITH_YOUR_SUPABASE_ANON_KEY';
+const SUPABASE_UPLOAD_EMAIL = 'upload-user@example.com';
+// ===================================
 
-let pollTimer;
-let currentHash = '';
+const BUCKET = 'private-send-files';
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
+const CODE_TTL_MS = 24 * 60 * 60 * 1000;
 
-function setStatus(message, error = false) {
-  editorStatus.textContent = message;
-  editorStatus.style.color = error ? '#b42318' : '#475467';
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const downloadCodeInput = document.getElementById('downloadCodeInput');
+const downloadBtn = document.getElementById('downloadBtn');
+const downloadStatus = document.getElementById('downloadStatus');
+
+const uploadLoginPasswordInput = document.getElementById('uploadLoginPasswordInput');
+const uploadLoginBtn = document.getElementById('uploadLoginBtn');
+const uploadLogoutBtn = document.getElementById('uploadLogoutBtn');
+const uploadAuthStatus = document.getElementById('uploadAuthStatus');
+
+const fileInput = document.getElementById('fileInput');
+const uploadBtn = document.getElementById('uploadBtn');
+const uploadStatus = document.getElementById('uploadStatus');
+const generatedCode = document.getElementById('generatedCode');
+
+let uploadUser = null;
+
+function setStatus(target, message, error = false) {
+  target.textContent = message;
+  target.style.color = error ? '#b42318' : '#475467';
 }
 
-function renderCommits(commits = []) {
-  commitList.innerHTML = '';
-  commits.forEach((c) => {
-    const li = document.createElement('li');
-    const ts = new Date(c.ts).toLocaleString();
-    li.textContent = `[${ts}] ${c.author}: ${c.message}`;
-    commitList.appendChild(li);
-  });
+function onlyDigits(value) {
+  return String(value || '').replace(/\D/g, '').slice(0, 6);
 }
 
-async function pollUpdates() {
-  const res = await fetch(`/api/poll?hash=${encodeURIComponent(currentHash)}`);
-  if (!res.ok) return;
-  const data = await res.json();
-  currentHash = data.hash || currentHash;
-  if (data.changed) {
-    editor.value = data.content;
-    renderCommits(data.commits || []);
-    setStatus('Document updated by another user.');
+function randomCode() {
+  return String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0');
+}
+
+function cleanFileName(name) {
+  return String(name || 'file.bin').replace(/[^a-zA-Z0-9._\- ()]/g, '_');
+}
+
+function refreshUploadAuthUI() {
+  const loggedIn = Boolean(uploadUser);
+  uploadBtn.disabled = !loggedIn;
+  fileInput.disabled = !loggedIn;
+  uploadLogoutBtn.style.display = loggedIn ? 'inline-block' : 'none';
+
+  if (loggedIn) {
+    setStatus(uploadAuthStatus, `Upload login active: ${uploadUser.email}`);
+  } else {
+    setStatus(uploadAuthStatus, 'Upload login required.');
   }
 }
 
-async function startPolling() {
-  clearInterval(pollTimer);
-  pollTimer = setInterval(async () => {
-    try {
-      await pollUpdates();
-    } catch {
-      // ignore polling hiccups
-    }
-  }, 2000);
-}
+async function createUniqueCode() {
+  for (let i = 0; i < 20; i += 1) {
+    const code = randomCode();
+    const { data, error } = await supabase
+      .from('transfers')
+      .select('code')
+      .eq('code', code)
+      .limit(1);
 
-async function loadDocument() {
-  const res = await fetch('/api/document');
-  if (!res.ok) {
-    throw new Error('Session expired');
+    if (error) throw error;
+    if (!data.length) return code;
   }
-  const data = await res.json();
-  editor.value = data.content;
-  renderCommits(data.commits);
-  currentHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(editor.value)).then((buf) =>
-    Array.from(new Uint8Array(buf))
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('')
-  );
-  await startPolling();
+  throw new Error('Could not generate code. Try again.');
 }
 
-async function showEditor() {
-  loginCard.classList.add('hidden');
-  editorCard.classList.remove('hidden');
-  await loadDocument();
-}
-
-loginBtn.addEventListener('click', async () => {
-  loginStatus.textContent = '';
-  const password = passwordInput.value;
-
-  const res = await fetch('/api/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password })
-  });
-
-  if (!res.ok) {
-    loginStatus.textContent = 'Wrong password.';
-    loginStatus.style.color = '#b42318';
+async function loginForUpload() {
+  if (SUPABASE_URL.includes('REPLACE_') || SUPABASE_ANON_KEY.includes('REPLACE_')) {
+    setStatus(uploadAuthStatus, 'Please set SUPABASE_URL + SUPABASE_ANON_KEY in main.js.', true);
     return;
   }
 
-  await showEditor();
-});
+  const password = uploadLoginPasswordInput.value;
+  if (!password) {
+    setStatus(uploadAuthStatus, 'Enter upload account password.', true);
+    return;
+  }
 
-commitBtn.addEventListener('click', async () => {
-  commitBtn.disabled = true;
-  setStatus('Committing...');
+  uploadLoginBtn.disabled = true;
 
   try {
-    const res = await fetch('/api/commit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        content: editor.value,
-        author: authorInput.value.trim() || 'anonymous',
-        message: messageInput.value.trim() || 'Updated shared document'
-      })
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: SUPABASE_UPLOAD_EMAIL,
+      password
     });
 
-    if (!res.ok) {
-      throw new Error('Could not commit');
+    if (error) throw error;
+    uploadUser = data.user;
+    uploadLoginPasswordInput.value = '';
+    refreshUploadAuthUI();
+    setStatus(uploadStatus, 'Now you can upload files.');
+  } catch (error) {
+    setStatus(uploadAuthStatus, error.message || 'Upload login failed.', true);
+  } finally {
+    uploadLoginBtn.disabled = false;
+  }
+}
+
+async function logoutUpload() {
+  await supabase.auth.signOut();
+  uploadUser = null;
+  refreshUploadAuthUI();
+  setStatus(uploadStatus, 'Upload login removed.');
+}
+
+async function uploadFile() {
+  const file = fileInput.files && fileInput.files[0];
+
+  if (!uploadUser) {
+    setStatus(uploadStatus, 'Please login for upload first.', true);
+    return;
+  }
+
+  if (!file) {
+    setStatus(uploadStatus, 'Pick a file first.', true);
+    return;
+  }
+
+  if (file.size > MAX_UPLOAD_BYTES) {
+    setStatus(uploadStatus, 'File too big. Max is 50 MB.', true);
+    return;
+  }
+
+  uploadBtn.disabled = true;
+  generatedCode.textContent = '';
+  setStatus(uploadStatus, 'Uploading...');
+
+  try {
+    const code = await createUniqueCode();
+    const objectPath = `${crypto.randomUUID()}-${cleanFileName(file.name)}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from(BUCKET)
+      .upload(objectPath, file, { upsert: false });
+
+    if (uploadError) throw uploadError;
+
+    const { error: insertError } = await supabase
+      .from('transfers')
+      .insert({
+        code,
+        object_path: objectPath,
+        original_name: cleanFileName(file.name),
+        content_type: file.type || 'application/octet-stream',
+        created_at: new Date().toISOString()
+      });
+
+    if (insertError) {
+      await supabase.storage.from(BUCKET).remove([objectPath]);
+      throw insertError;
     }
 
-    messageInput.value = '';
-    await pollUpdates();
-    setStatus('Committed! Everyone will see this update.');
-  } catch (err) {
-    setStatus(err.message, true);
+    setStatus(uploadStatus, 'Upload done. Share this code:');
+    generatedCode.textContent = code;
+    fileInput.value = '';
+  } catch (error) {
+    setStatus(uploadStatus, error.message || 'Upload failed', true);
   } finally {
-    commitBtn.disabled = false;
+    uploadBtn.disabled = false;
   }
+}
+
+async function downloadWithCode() {
+  const code = onlyDigits(downloadCodeInput.value);
+  downloadCodeInput.value = code;
+
+  if (SUPABASE_URL.includes('REPLACE_') || SUPABASE_ANON_KEY.includes('REPLACE_')) {
+    setStatus(downloadStatus, 'Please set SUPABASE_URL + SUPABASE_ANON_KEY in main.js.', true);
+    return;
+  }
+
+  if (code.length !== 6) {
+    setStatus(downloadStatus, 'Code must be 6 digits.', true);
+    return;
+  }
+
+  downloadBtn.disabled = true;
+  setStatus(downloadStatus, 'Checking code...');
+
+  try {
+    const { data: rows, error: rowError } = await supabase
+      .from('transfers')
+      .select('code, object_path, original_name, content_type, created_at')
+      .eq('code', code)
+      .limit(1);
+
+    if (rowError) throw rowError;
+    if (!rows.length) throw new Error('Code not found or already used.');
+
+    const transfer = rows[0];
+    const age = Date.now() - new Date(transfer.created_at).getTime();
+
+    if (Number.isFinite(age) && age > CODE_TTL_MS) {
+      await supabase.storage.from(BUCKET).remove([transfer.object_path]);
+      await supabase.from('transfers').delete().eq('code', code);
+      throw new Error('Code expired.');
+    }
+
+    const { data: fileData, error: downloadError } = await supabase.storage
+      .from(BUCKET)
+      .download(transfer.object_path);
+
+    if (downloadError) throw downloadError;
+
+    await supabase.storage.from(BUCKET).remove([transfer.object_path]);
+    await supabase.from('transfers').delete().eq('code', code);
+
+    const blob = new Blob([fileData], { type: transfer.content_type || 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = transfer.original_name || `download-${code}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
+    setStatus(downloadStatus, 'Downloaded. Code is now used and deleted.');
+    downloadCodeInput.value = '';
+  } catch (error) {
+    setStatus(downloadStatus, error.message || 'Download failed', true);
+  } finally {
+    downloadBtn.disabled = false;
+  }
+}
+
+downloadCodeInput.addEventListener('input', () => {
+  downloadCodeInput.value = onlyDigits(downloadCodeInput.value);
 });
 
-logoutBtn.addEventListener('click', async () => {
-  clearInterval(pollTimer);
-  await fetch('/api/logout', { method: 'POST' });
-  editorCard.classList.add('hidden');
-  loginCard.classList.remove('hidden');
-  passwordInput.value = '';
-  loginStatus.textContent = 'Logged out.';
-});
+uploadLoginBtn.addEventListener('click', loginForUpload);
+uploadLogoutBtn.addEventListener('click', logoutUpload);
+downloadBtn.addEventListener('click', downloadWithCode);
+uploadBtn.addEventListener('click', uploadFile);
 
 (async () => {
-  try {
-    await showEditor();
-  } catch {
-    loginCard.classList.remove('hidden');
-    editorCard.classList.add('hidden');
-  }
+  const { data } = await supabase.auth.getSession();
+  uploadUser = data.session?.user || null;
+  refreshUploadAuthUI();
 })();

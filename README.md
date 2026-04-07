@@ -1,81 +1,98 @@
-# Shared Firebase Notes (GitHub Pages compatible)
+# Private Send (Supabase only, no custom server)
 
-This website is static (works on GitHub Pages) and uses Firebase for:
-- password login,
-- multiple notes (create/edit title/content/delete),
-- per-note commit history,
-- realtime updates.
+Yes — this is Supabase-only.
+No Node backend needed for upload/download flow.
 
-No backend server is needed.
+## What it does
+1. Upload user logs in (Supabase Auth email/password)
+2. Upload file (max 50 MB)
+3. Get random 6-digit code
+4. Other person enters code to download
+5. File/code gets deleted after download
 
 ---
 
-## Easy setup (step by step)
+## Step-by-step setup
 
-## 1) In Firebase: create project + web app
+### Step 1) Create Supabase project
+- Go to https://supabase.com
+- Create project
 
-1. Open Firebase Console and create a project.
-2. Add a **Web app**.
-3. Copy the web config values (`apiKey`, `authDomain`, `projectId`, `storageBucket`, `messagingSenderId`, `appId`).
+### Step 2) Create bucket
+- Storage -> New bucket
+- Name: `private-send-files`
+- Make it **Private**
 
-## 2) In Firebase: enable login and create shared user
+### Step 3) Create upload auth user
+- Authentication -> Users -> Add user
+- Email example: `upload-user@example.com`
+- Set your own password (this is upload login password)
 
-1. Open **Authentication → Sign-in method** and enable **Email/Password**.
-2. Open **Authentication → Users** and create one user:
-   - Email: `sharedemail@email.com` (or your own)
-   - Password: `wnsdud5999@` (or your own)
+### Step 4) Create table + policies
+Open SQL Editor and run this:
 
-## 3) In Firebase: create Firestore database
+```sql
+create table if not exists public.transfers (
+  code text primary key,
+  object_path text not null,
+  original_name text not null,
+  content_type text,
+  created_at timestamptz not null default now()
+);
 
-1. Open **Firestore Database** and create database in production mode.
-2. Open **Rules** and paste this:
+alter table public.transfers enable row level security;
 
-```txt
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /notes/{noteId} {
-      allow read, write: if request.auth != null;
+-- downloader can find and delete by code
+create policy "anon can read transfers"
+on public.transfers for select
+to anon using (true);
 
-      match /commits/{commitId} {
-        allow read, write: if request.auth != null;
-      }
-    }
-  }
-}
+create policy "anon can delete transfers"
+on public.transfers for delete
+to anon using (true);
+
+-- uploader must be logged-in (authenticated)
+create policy "authenticated can insert transfers"
+on public.transfers for insert
+to authenticated with check (true);
+
+-- storage policies
+create policy "authenticated can upload files"
+on storage.objects for insert
+to authenticated with check (bucket_id = 'private-send-files');
+
+create policy "anon can read files"
+on storage.objects for select
+to anon using (bucket_id = 'private-send-files');
+
+create policy "anon can delete files"
+on storage.objects for delete
+to anon using (bucket_id = 'private-send-files');
 ```
 
-## 4) Edit `main.js`
+### Step 5) Get Supabase values
+Project Settings -> API:
+- Project URL
+- anon public key
 
-Replace these values:
-- all `REPLACE_ME` entries in `firebaseConfig`
-- `SHARED_EMAIL`
+### Step 6) Edit `main.js`
+Set these values at the top:
 
-Important:
-- The entered password on the site must match the shared Firebase user password.
+```js
+const SUPABASE_URL = 'YOUR_PROJECT_URL';
+const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY';
+const SUPABASE_UPLOAD_EMAIL = 'upload-user@example.com';
+```
 
-## 5) Deploy on GitHub Pages
+`SUPABASE_UPLOAD_EMAIL` must match the user you created in Step 3.
 
-1. Push this repo to GitHub.
-2. Open **Settings → Pages**.
-3. Deploy from branch root.
-4. Open your Pages URL.
-
----
-
-## What to do on the website
-
-- Enter shared password.
-- Click **+ New note** to create notes.
-- Edit note title + text.
-- Click **Commit changes**.
-- See recent commits for the selected note.
-- Click **Delete note** if needed.
+### Step 7) Run site
+Open `index.html` directly or deploy static hosting (GitHub Pages/Netlify/Vercel).
 
 ---
 
-## Troubleshooting
+## How to change upload password
+Change password of upload user in Supabase:
+- Authentication -> Users -> select upload user -> reset/update password
 
-- **Login failed (`auth/api-key-not-valid`)**: your `firebaseConfig` still has wrong or placeholder values.
-- **Login failed (`auth/invalid-credential`)**: `SHARED_EMAIL`, password, or project is mismatched.
-- **No notes visible / write errors**: Firestore rules were not applied.
+No code change needed unless you changed upload email.
