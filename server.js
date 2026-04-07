@@ -6,6 +6,9 @@ const { URL } = require('url');
 
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC_DIR = path.join(__dirname, 'public');
+const DATA_DIR = path.join(__dirname, 'data');
+const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
+const TRANSFERS_FILE = path.join(DATA_DIR, 'transfers.json');
 
 const UPLOAD_PASSWORD = process.env.UPLOAD_PASSWORD || 'upload123!';
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
