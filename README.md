@@ -1,57 +1,50 @@
-# Personal Cloud with Supabase (password protected)
+# Private Send (one-time 6-digit download code)
 
-This is a small web app for personal cloud storage:
-- password login,
-- upload files,
-- download files,
-- delete files,
-- file list with size + updated time.
+This is a private "send anywhere" style file share.
 
-The app keeps a simple password gate on the server, then uses Supabase Storage behind the scenes.
+## How it works
+1. Uploader enters **upload password** and uploads a file.
+2. Website gives a **random 6-digit code**.
+3. Receiver enters that 6-digit code and downloads the file.
+4. File is **deleted automatically after first successful download**.
 
 ## Setup
 
-### 1) Create Supabase project + bucket
+## Quick setup
 
-1. Create a project in Supabase.
-2. Create a bucket (for example `personal-cloud`).
-3. Copy these values from project settings:
-   - `SUPABASE_URL`
-   - `SUPABASE_SERVICE_ROLE_KEY`
-
-### 2) Configure environment variables
-
-Create a `.env` (or set env vars in your host):
-
+### 1) Install and run
 ```bash
-PORT=3000
-SESSION_SECRET=replace-with-long-random-value
-PASSWORD_SALT=replace-with-random-salt
-EDITOR_PASSWORD_HASH=<optional sha256 hash>
-SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
-SUPABASE_BUCKET=personal-cloud
-```
-
-Password behavior:
-- If `EDITOR_PASSWORD_HASH` is set, it is used.
-- Otherwise it falls back to default password: `wnsdud5999@`.
-
-To generate your own password hash:
-
-```bash
-node -e "const c=require('crypto'); const salt='YOUR_SALT'; const pw='YOUR_PASSWORD'; console.log(c.createHash('sha256').update(`${salt}:${pw}`).digest('hex'))"
-```
-
-### 3) Run
-
-```bash
+npm install
 npm start
 ```
 
-Open `http://localhost:3000`.
+### 2) Set your upload password (important)
+Default password is `upload123!` (change this!).
+
+Run server with your own password:
+```bash
+UPLOAD_PASSWORD="my-secret-upload-pass" npm start
+```
+
+Optional custom port:
+```bash
+PORT=3000 UPLOAD_PASSWORD="my-secret-upload-pass" npm start
+```
+
+### 3) Open in browser
+`http://localhost:3000`
+
+---
 
 ## Notes
+- Code is always 6 digits.
+- Download code is one-time use.
+- Expired files are cleaned up automatically (24 hours).
+- Files are stored on server disk in `data/uploads` until downloaded/expired.
 
-- This app uses `SUPABASE_SERVICE_ROLE_KEY` on the server only (never expose it in client code).
-- Upload API currently accepts base64 JSON payloads, intended for personal use and moderate file sizes.
+Open `http://localhost:3000`.
+
+## Troubleshooting
+- "Wrong upload password" → check `UPLOAD_PASSWORD` value.
+- "Code not found or already used" → code is wrong, expired, or already downloaded.
+- If server restarts and data folder is removed, old codes will not work.

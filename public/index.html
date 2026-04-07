@@ -3,83 +3,55 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Personal Cloud (Supabase)</title>
+    <title>Private Send (One-time code)</title>
     <style>
-      :root {
-        font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-        color: #101828;
-      }
-      body {
-        margin: 0;
-        background: #f2f4f7;
-      }
-      .container {
-        max-width: 960px;
-        margin: 24px auto;
-        padding: 0 16px;
-      }
-      .card {
-        background: white;
-        border-radius: 16px;
-        box-shadow: 0 8px 24px rgba(16, 24, 40, 0.08);
-        padding: 18px;
-      }
-      h1 { margin: 0 0 12px; font-size: 1.3rem; }
+      :root { font-family: Inter, system-ui, Arial, sans-serif; color: #101828; }
+      body { margin: 0; background: #f2f4f7; }
+      .container { max-width: 920px; margin: 20px auto; padding: 0 16px; }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+      .card { background: #fff; border-radius: 16px; box-shadow: 0 8px 24px rgba(16,24,40,.08); padding: 18px; }
+      h1 { margin: 0 0 6px; font-size: 1.2rem; }
+      p { margin: 0; color: #475467; font-size: .92rem; }
       .row { display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
-      input, button {
-        border: 1px solid #d0d5dd;
-        border-radius: 10px;
-        padding: 10px 12px;
-        font-size: 0.92rem;
-      }
-      button { border-color: #6941c6; background: #6941c6; color: white; cursor: pointer; }
-      button.secondary { background: white; color: #344054; border-color: #d0d5dd; }
-      button.danger { background: #b42318; border-color: #b42318; }
-      .status { color: #475467; font-size: 0.9rem; }
-      .hidden { display: none; }
-      #loginCard { max-width: 420px; margin: 80px auto; }
-      table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-      th, td { text-align: left; padding: 10px; border-bottom: 1px solid #eaecf0; font-size: 0.9rem; }
+      input, button { border: 1px solid #d0d5dd; border-radius: 10px; padding: 10px 12px; font-size: .92rem; }
+      input { flex: 1; min-width: 120px; }
+      button { border-color: #6941c6; background: #6941c6; color: #fff; cursor: pointer; }
+      .status { margin-top: 10px; color: #475467; font-size: .9rem; min-height: 20px; }
+      .big-code { margin-top: 14px; font-size: 2rem; font-weight: 700; letter-spacing: 6px; color: #6941c6; }
+      @media (max-width: 860px){ .grid{ grid-template-columns: 1fr; } }
     </style>
   </head>
   <body>
     <div class="container">
-      <div id="loginCard" class="card">
-        <h1>Enter password</h1>
-        <div class="row">
-          <input id="passwordInput" type="password" placeholder="Password" style="flex: 1" />
-          <button id="loginBtn">Unlock</button>
-        </div>
-        <p id="loginStatus" class="status"></p>
+      <div class="card" style="margin-bottom: 14px;">
+        <h1>Private Send</h1>
+        <p>Upload creates a random 6-digit code. Download with code. File is auto-deleted after first download.</p>
       </div>
 
-      <div id="cloudCard" class="card hidden">
-        <div class="row" style="justify-content: space-between; margin-top: 0">
-          <h1>Personal Cloud</h1>
-          <button id="logoutBtn" class="secondary">Logout</button>
-        </div>
+      <div class="grid">
+        <section class="card">
+          <h1>Download</h1>
+          <p>Enter 6-digit code.</p>
+          <div class="row">
+            <input id="downloadCodeInput" maxlength="6" placeholder="123456" inputmode="numeric" />
+            <button id="downloadBtn">Download</button>
+          </div>
+          <div id="downloadStatus" class="status"></div>
+        </section>
 
-        <p class="status">Upload files to Supabase storage and download anytime.</p>
-
-        <div class="row">
-          <input id="fileInput" type="file" style="flex: 1" />
-          <button id="uploadBtn">Upload</button>
-          <button id="refreshBtn" class="secondary">Refresh</button>
-        </div>
-
-        <p id="cloudStatus" class="status"></p>
-
-        <table>
-          <thead>
-            <tr>
-              <th>File</th>
-              <th>Size</th>
-              <th>Updated</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="fileTableBody"></tbody>
-        </table>
+        <section class="card">
+          <h1>Upload (protected)</h1>
+          <p>You need upload password.</p>
+          <div class="row">
+            <input id="uploadPasswordInput" type="password" placeholder="Upload password" />
+          </div>
+          <div class="row">
+            <input id="fileInput" type="file" />
+            <button id="uploadBtn">Upload</button>
+          </div>
+          <div id="uploadStatus" class="status"></div>
+          <div id="generatedCode" class="big-code"></div>
+        </section>
       </div>
     </div>
 

@@ -6,61 +6,44 @@ const { URL } = require('url');
 
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC_DIR = path.join(__dirname, 'public');
+const DATA_DIR = path.join(__dirname, 'data');
+const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
+const TRANSFERS_FILE = path.join(DATA_DIR, 'transfers.json');
 
-const DEFAULT_PASSWORD = 'wnsdud5999@';
-const PASSWORD_SALT = process.env.PASSWORD_SALT || 'editor-static-salt-change-me';
-const configuredHash = process.env.EDITOR_PASSWORD_HASH || '';
-const sessionSecret = process.env.SESSION_SECRET || 'replace-this-with-a-long-random-string';
+const UPLOAD_PASSWORD = process.env.UPLOAD_PASSWORD || 'upload123!';
+const MAX_BODY_BYTES = 35_000_000;
+const TRANSFER_TTL_MS = 24 * 60 * 60 * 1000;
 
-const SUPABASE_URL = process.env.SUPABASE_URL || '';
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-const SUPABASE_BUCKET = process.env.SUPABASE_BUCKET || 'personal-cloud';
-
-function sha256(input) {
-  return crypto.createHash('sha256').update(input).digest('hex');
+function ensureStorage() {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  if (!fs.existsSync(TRANSFERS_FILE)) fs.writeFileSync(TRANSFERS_FILE, JSON.stringify([], null, 2));
 }
 
-function derivePasswordHash(plainPassword) {
-  return sha256(`${PASSWORD_SALT}:${plainPassword}`);
+function readTransfers() {
+  return JSON.parse(fs.readFileSync(TRANSFERS_FILE, 'utf8'));
 }
 
-const effectivePasswordHash = configuredHash || derivePasswordHash(DEFAULT_PASSWORD);
-
-function parseCookies(req) {
-  const raw = req.headers.cookie;
-  if (!raw) return {};
-  return raw.split(';').reduce((acc, pair) => {
-    const idx = pair.indexOf('=');
-    if (idx === -1) return acc;
-    acc[pair.slice(0, idx).trim()] = decodeURIComponent(pair.slice(idx + 1).trim());
-    return acc;
-  }, {});
+function writeTransfers(items) {
+  fs.writeFileSync(TRANSFERS_FILE, JSON.stringify(items, null, 2));
 }
 
-function signSession(value) {
-  return crypto.createHmac('sha256', sessionSecret).update(value).digest('hex');
-}
+function cleanupExpiredTransfers() {
+  const now = Date.now();
+  const transfers = readTransfers();
+  const kept = [];
 
-function createSessionCookie() {
-  const value = crypto.randomBytes(16).toString('hex');
-  return `${value}.${signSession(value)}`;
-}
+  transfers.forEach((item) => {
+    const expired = now - new Date(item.createdAt).getTime() > TRANSFER_TTL_MS;
+    if (expired) {
+      const absolute = path.join(UPLOADS_DIR, item.storedName);
+      if (fs.existsSync(absolute)) fs.unlinkSync(absolute);
+    } else {
+      kept.push(item);
+    }
+  });
 
-function verifySessionCookie(cookieValue) {
-  if (!cookieValue) return false;
-  const [value, sig] = cookieValue.split('.');
-  if (!value || !sig) return false;
-  const expected = signSession(value);
-  try {
-    return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
-  } catch {
-    return false;
-  }
-}
-
-function isAuthorized(req) {
-  const cookies = parseCookies(req);
-  return verifySessionCookie(cookies.editor_session);
+  if (kept.length !== transfers.length) writeTransfers(kept);
 }
 
 function json(res, statusCode, payload, headers = {}) {
@@ -68,7 +51,7 @@ function json(res, statusCode, payload, headers = {}) {
   res.end(JSON.stringify(payload));
 }
 
-function readBody(req, maxBytes = 35_000_000) {
+function readBody(req, maxBytes = MAX_BODY_BYTES) {
   return new Promise((resolve, reject) => {
     let raw = '';
     req.on('data', (chunk) => {
@@ -97,7 +80,7 @@ function mimeType(filePath) {
   return 'application/octet-stream';
 }
 
-function serveStatic(req, res, pathname) {
+function serveStatic(res, pathname) {
   const requested = pathname === '/' ? '/index.html' : pathname;
   const safePath = path.normalize(requested).replace(/^([.][.][/\\])+/, '');
   const absolute = path.join(PUBLIC_DIR, safePath);
@@ -118,170 +101,103 @@ function serveStatic(req, res, pathname) {
   fs.createReadStream(absolute).pipe(res);
 }
 
-function requireSupabaseConfig() {
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error('Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
+function sanitizeFileName(name) {
+  const base = path.basename(String(name || '').trim());
+  if (!base) throw new Error('Invalid file name');
+  if (!/^[a-zA-Z0-9._\- ()]+$/.test(base)) throw new Error('Invalid file name');
+  return base;
+}
+
+function generateCode() {
+  return String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0');
+}
+
+function createUniqueCode(existing) {
+  for (let i = 0; i < 20; i += 1) {
+    const code = generateCode();
+    if (!existing.some((item) => item.code === code)) return code;
   }
+  throw new Error('Could not generate transfer code');
 }
 
-function cleanFilePath(filePath) {
-  const trimmed = String(filePath || '').trim();
-  if (!trimmed || trimmed.length > 200) throw new Error('Invalid file path');
-  if (trimmed.includes('..') || trimmed.startsWith('/')) throw new Error('Invalid file path');
-  if (!/^[a-zA-Z0-9._\-/ ]+$/.test(trimmed)) throw new Error('Invalid file path');
-  return trimmed.replace(/\\/g, '/');
-}
+async function handleUpload(req, res) {
+  const body = await readBody(req);
+  const uploadPassword = String(body.uploadPassword || '');
+  if (uploadPassword !== UPLOAD_PASSWORD) return json(res, 401, { error: 'Wrong upload password' });
 
-async function supabaseFetch(endpoint, init = {}) {
-  const res = await fetch(`${SUPABASE_URL}${endpoint}`, {
-    ...init,
-    headers: {
-      apikey: SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      ...(init.headers || {})
-    }
+  const fileName = sanitizeFileName(body.fileName);
+  const contentBase64 = String(body.contentBase64 || '');
+  const contentType = typeof body.contentType === 'string' ? body.contentType : 'application/octet-stream';
+  if (!contentBase64) return json(res, 400, { error: 'contentBase64 is required' });
+
+  const buffer = Buffer.from(contentBase64, 'base64');
+  if (!buffer.length) return json(res, 400, { error: 'File is empty' });
+
+  const transfers = readTransfers();
+  const code = createUniqueCode(transfers);
+  const storedName = `${crypto.randomUUID()}-${fileName}`;
+  fs.writeFileSync(path.join(UPLOADS_DIR, storedName), buffer);
+
+  transfers.push({
+    code,
+    originalName: fileName,
+    storedName,
+    contentType,
+    createdAt: new Date().toISOString()
   });
+  writeTransfers(transfers);
 
-  return res;
+  return json(res, 200, { ok: true, code });
 }
 
-async function listFiles() {
-  const res = await supabaseFetch(`/storage/v1/object/list/${encodeURIComponent(SUPABASE_BUCKET)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      limit: 200,
-      offset: 0,
-      sortBy: { column: 'name', order: 'asc' }
-    })
+async function handleDownload(res, code) {
+  if (!/^\d{6}$/.test(code)) return json(res, 400, { error: 'Code must be 6 digits' });
+
+  const transfers = readTransfers();
+  const idx = transfers.findIndex((item) => item.code === code);
+  if (idx === -1) return json(res, 404, { error: 'Code not found or already used' });
+
+  const transfer = transfers[idx];
+  const absolute = path.join(UPLOADS_DIR, transfer.storedName);
+  if (!fs.existsSync(absolute)) {
+    transfers.splice(idx, 1);
+    writeTransfers(transfers);
+    return json(res, 404, { error: 'File no longer exists' });
+  }
+
+  const fileBuffer = fs.readFileSync(absolute);
+
+  fs.unlinkSync(absolute);
+  transfers.splice(idx, 1);
+  writeTransfers(transfers);
+
+  res.writeHead(200, {
+    'Content-Type': transfer.contentType || 'application/octet-stream',
+    'Content-Length': fileBuffer.length,
+    'Content-Disposition': `attachment; filename="${transfer.originalName.replace(/"/g, '')}"`
   });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`List failed: ${res.status} ${text}`);
-  }
-
-  const items = await res.json();
-  return items
-    .filter((item) => item && item.name && !item.id)
-    .map((item) => ({
-      name: item.name,
-      size: item.metadata?.size || 0,
-      updated_at: item.updated_at || item.created_at || null
-    }));
+  res.end(fileBuffer);
 }
 
-async function uploadFile(filePath, buffer, contentType = 'application/octet-stream') {
-  const endpoint = `/storage/v1/object/${encodeURIComponent(SUPABASE_BUCKET)}/${encodeURI(filePath)}`;
-  const res = await supabaseFetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': contentType,
-      'x-upsert': 'true'
-    },
-    body: buffer
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Upload failed: ${res.status} ${text}`);
-  }
-}
-
-async function downloadFile(filePath) {
-  const endpoint = `/storage/v1/object/${encodeURIComponent(SUPABASE_BUCKET)}/${encodeURI(filePath)}`;
-  const res = await supabaseFetch(endpoint, { method: 'GET' });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Download failed: ${res.status} ${text}`);
-  }
-  return res;
-}
-
-async function deleteFile(filePath) {
-  const res = await supabaseFetch(`/storage/v1/object/${encodeURIComponent(SUPABASE_BUCKET)}`, {
-    method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prefixes: [filePath] })
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Delete failed: ${res.status} ${text}`);
-  }
-}
+ensureStorage();
+cleanupExpiredTransfers();
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const pathname = url.pathname;
 
   try {
-    if (req.method === 'POST' && pathname === '/api/login') {
-      const body = await readBody(req);
-      const supplied = typeof body.password === 'string' ? body.password : '';
-      const ok = derivePasswordHash(supplied) === effectivePasswordHash;
-      if (!ok) return json(res, 401, { ok: false, error: 'Wrong password' });
-
-      const token = createSessionCookie();
-      return json(
-        res,
-        200,
-        { ok: true },
-        { 'Set-Cookie': `editor_session=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=86400` }
-      );
-    }
-
-    if (req.method === 'POST' && pathname === '/api/logout') {
-      return json(res, 200, { ok: true }, { 'Set-Cookie': 'editor_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0' });
-    }
-
-    if (pathname.startsWith('/api/')) {
-      if (!isAuthorized(req)) return json(res, 401, { error: 'Unauthorized' });
-      requireSupabaseConfig();
-    }
-
-    if (req.method === 'GET' && pathname === '/api/files') {
-      const files = await listFiles();
-      return json(res, 200, { files });
-    }
-
     if (req.method === 'POST' && pathname === '/api/upload') {
-      const body = await readBody(req);
-      const fileName = cleanFilePath(body.fileName);
-      const contentBase64 = String(body.contentBase64 || '');
-      const contentType = typeof body.contentType === 'string' ? body.contentType : 'application/octet-stream';
-      if (!contentBase64) return json(res, 400, { error: 'contentBase64 is required' });
-
-      const buffer = Buffer.from(contentBase64, 'base64');
-      await uploadFile(fileName, buffer, contentType);
-
-      return json(res, 200, { ok: true });
+      return await handleUpload(req, res);
     }
 
     if (req.method === 'GET' && pathname === '/api/download') {
-      const filePath = cleanFilePath(url.searchParams.get('path') || '');
-      const fileRes = await downloadFile(filePath);
-      const contentType = fileRes.headers.get('content-type') || 'application/octet-stream';
-      const arrayBuffer = await fileRes.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-
-      res.writeHead(200, {
-        'Content-Type': contentType,
-        'Content-Length': buffer.length,
-        'Content-Disposition': `attachment; filename="${path.basename(filePath).replace(/"/g, '')}"`
-      });
-      res.end(buffer);
-      return;
-    }
-
-    if (req.method === 'DELETE' && pathname === '/api/file') {
-      const filePath = cleanFilePath(url.searchParams.get('path') || '');
-      await deleteFile(filePath);
-      return json(res, 200, { ok: true });
+      const code = String(url.searchParams.get('code') || '').trim();
+      return await handleDownload(res, code);
     }
 
     if (req.method === 'GET') {
-      return serveStatic(req, res, pathname);
+      return serveStatic(res, pathname);
     }
 
     res.writeHead(405);
@@ -293,5 +209,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Personal cloud running at http://localhost:${PORT}`);
+  console.log(`Private file transfer running at http://localhost:${PORT}`);
 });
