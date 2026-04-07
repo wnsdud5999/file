@@ -11,39 +11,16 @@ const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 const TRANSFERS_FILE = path.join(DATA_DIR, 'transfers.json');
 
 const UPLOAD_PASSWORD = process.env.UPLOAD_PASSWORD || 'upload123!';
-const MAX_BODY_BYTES = 35_000_000;
+const SUPABASE_URL = process.env.SUPABASE_URL || '';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const SUPABASE_BUCKET = process.env.SUPABASE_BUCKET || 'private-send-files';
 const TRANSFER_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_BODY_BYTES = 35_000_000;
 
-function ensureStorage() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-  if (!fs.existsSync(TRANSFERS_FILE)) fs.writeFileSync(TRANSFERS_FILE, JSON.stringify([], null, 2));
-}
-
-function readTransfers() {
-  return JSON.parse(fs.readFileSync(TRANSFERS_FILE, 'utf8'));
-}
-
-function writeTransfers(items) {
-  fs.writeFileSync(TRANSFERS_FILE, JSON.stringify(items, null, 2));
-}
-
-function cleanupExpiredTransfers() {
-  const now = Date.now();
-  const transfers = readTransfers();
-  const kept = [];
-
-  transfers.forEach((item) => {
-    const expired = now - new Date(item.createdAt).getTime() > TRANSFER_TTL_MS;
-    if (expired) {
-      const absolute = path.join(UPLOADS_DIR, item.storedName);
-      if (fs.existsSync(absolute)) fs.unlinkSync(absolute);
-    } else {
-      kept.push(item);
-    }
-  });
-
-  if (kept.length !== transfers.length) writeTransfers(kept);
+function requireConfig() {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+  }
 }
 
 function json(res, statusCode, payload, headers = {}) {
@@ -112,10 +89,88 @@ function generateCode() {
   return String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0');
 }
 
-function createUniqueCode(existing) {
+async function supabaseFetch(endpoint, init = {}) {
+  requireConfig();
+  return fetch(`${SUPABASE_URL}${endpoint}`, {
+    ...init,
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      ...(init.headers || {})
+    }
+  });
+}
+
+async function uploadToStorage(objectPath, buffer, contentType) {
+  const res = await supabaseFetch(`/storage/v1/object/${encodeURIComponent(SUPABASE_BUCKET)}/${encodeURI(objectPath)}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': contentType || 'application/octet-stream',
+      'x-upsert': 'false'
+    },
+    body: buffer
+  });
+
+  if (!res.ok) throw new Error(`Storage upload failed: ${res.status}`);
+}
+
+async function deleteFromStorage(objectPath) {
+  const res = await supabaseFetch(`/storage/v1/object/${encodeURIComponent(SUPABASE_BUCKET)}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prefixes: [objectPath] })
+  });
+
+  if (!res.ok) throw new Error(`Storage delete failed: ${res.status}`);
+}
+
+async function downloadFromStorage(objectPath) {
+  const res = await supabaseFetch(`/storage/v1/object/${encodeURIComponent(SUPABASE_BUCKET)}/${encodeURI(objectPath)}`, {
+    method: 'GET'
+  });
+
+  if (!res.ok) throw new Error(`Storage download failed: ${res.status}`);
+  return res;
+}
+
+async function findTransfer(code) {
+  const res = await supabaseFetch(`/rest/v1/transfers?code=eq.${encodeURIComponent(code)}&select=code,object_path,original_name,content_type,created_at&limit=1`, {
+    method: 'GET',
+    headers: { Accept: 'application/json' }
+  });
+
+  if (!res.ok) throw new Error(`Transfer lookup failed: ${res.status}`);
+  const rows = await res.json();
+  return rows[0] || null;
+}
+
+async function insertTransfer(row) {
+  const res = await supabaseFetch('/rest/v1/transfers', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal'
+    },
+    body: JSON.stringify(row)
+  });
+
+  if (!res.ok) throw new Error(`Transfer create failed: ${res.status}`);
+}
+
+async function deleteTransfer(code) {
+  const res = await supabaseFetch(`/rest/v1/transfers?code=eq.${encodeURIComponent(code)}`, {
+    method: 'DELETE',
+    headers: { Prefer: 'return=minimal' }
+  });
+
+  if (!res.ok) throw new Error(`Transfer delete failed: ${res.status}`);
+}
+
+async function createUniqueCode() {
   for (let i = 0; i < 20; i += 1) {
     const code = generateCode();
-    if (!existing.some((item) => item.code === code)) return code;
+    const existing = await findTransfer(code);
+    if (!existing) return code;
   }
   throw new Error('Could not generate transfer code');
 }
@@ -133,19 +188,17 @@ async function handleUpload(req, res) {
   const buffer = Buffer.from(contentBase64, 'base64');
   if (!buffer.length) return json(res, 400, { error: 'File is empty' });
 
-  const transfers = readTransfers();
-  const code = createUniqueCode(transfers);
-  const storedName = `${crypto.randomUUID()}-${fileName}`;
-  fs.writeFileSync(path.join(UPLOADS_DIR, storedName), buffer);
+  const code = await createUniqueCode();
+  const objectPath = `${crypto.randomUUID()}-${fileName}`;
 
-  transfers.push({
+  await uploadToStorage(objectPath, buffer, contentType);
+  await insertTransfer({
     code,
-    originalName: fileName,
-    storedName,
-    contentType,
-    createdAt: new Date().toISOString()
+    object_path: objectPath,
+    original_name: fileName,
+    content_type: contentType,
+    created_at: new Date().toISOString()
   });
-  writeTransfers(transfers);
 
   return json(res, 200, { ok: true, code });
 }
@@ -153,34 +206,31 @@ async function handleUpload(req, res) {
 async function handleDownload(res, code) {
   if (!/^\d{6}$/.test(code)) return json(res, 400, { error: 'Code must be 6 digits' });
 
-  const transfers = readTransfers();
-  const idx = transfers.findIndex((item) => item.code === code);
-  if (idx === -1) return json(res, 404, { error: 'Code not found or already used' });
+  const transfer = await findTransfer(code);
+  if (!transfer) return json(res, 404, { error: 'Code not found or already used' });
 
-  const transfer = transfers[idx];
-  const absolute = path.join(UPLOADS_DIR, transfer.storedName);
-  if (!fs.existsSync(absolute)) {
-    transfers.splice(idx, 1);
-    writeTransfers(transfers);
-    return json(res, 404, { error: 'File no longer exists' });
+  const createdAtMs = new Date(transfer.created_at).getTime();
+  if (Number.isFinite(createdAtMs) && Date.now() - createdAtMs > TRANSFER_TTL_MS) {
+    await deleteFromStorage(transfer.object_path).catch(() => {});
+    await deleteTransfer(code);
+    return json(res, 404, { error: 'Code expired' });
   }
 
-  const fileBuffer = fs.readFileSync(absolute);
+  const fileRes = await downloadFromStorage(transfer.object_path);
+  const contentType = transfer.content_type || fileRes.headers.get('content-type') || 'application/octet-stream';
+  const arrayBuffer = await fileRes.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
 
-  fs.unlinkSync(absolute);
-  transfers.splice(idx, 1);
-  writeTransfers(transfers);
+  await deleteFromStorage(transfer.object_path);
+  await deleteTransfer(code);
 
   res.writeHead(200, {
-    'Content-Type': transfer.contentType || 'application/octet-stream',
-    'Content-Length': fileBuffer.length,
-    'Content-Disposition': `attachment; filename="${transfer.originalName.replace(/"/g, '')}"`
+    'Content-Type': contentType,
+    'Content-Length': buffer.length,
+    'Content-Disposition': `attachment; filename="${String(transfer.original_name || 'download.bin').replace(/"/g, '')}"`
   });
-  res.end(fileBuffer);
+  res.end(buffer);
 }
-
-ensureStorage();
-cleanupExpiredTransfers();
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);

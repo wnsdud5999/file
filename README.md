@@ -1,50 +1,110 @@
-# Private Send (one-time 6-digit download code)
+# Private Send (Supabase version) — very simple setup
 
-This is a private "send anywhere" style file share.
+Yes ✅ this version is now **Supabase-based**.
 
-## How it works
-1. Uploader enters **upload password** and uploads a file.
-2. Website gives a **random 6-digit code**.
-3. Receiver enters that 6-digit code and downloads the file.
-4. File is **deleted automatically after first successful download**.
+You upload a file -> app gives 6-digit code -> friend downloads -> file auto-deletes.
 
-## Setup
+---
 
-## Quick setup
+## What you need
+- Supabase account
+- Node.js installed
 
-### 1) Install and run
+---
+
+## Step 1) Create Supabase project
+1. Go to https://supabase.com
+2. Click **New project**
+3. Wait until it finishes
+
+---
+
+## Step 2) Create storage bucket
+1. Open your Supabase project
+2. Click **Storage**
+3. Click **New bucket**
+4. Bucket name: `private-send-files`
+5. Keep it **Private**
+6. Create bucket
+
+---
+
+## Step 3) Create transfers table
+1. In Supabase, click **SQL Editor**
+2. Click **New query**
+3. Paste this SQL and run:
+
+```sql
+create table if not exists public.transfers (
+  code text primary key,
+  object_path text not null,
+  original_name text not null,
+  content_type text,
+  created_at timestamptz not null default now()
+);
+```
+
+---
+
+## Step 4) Copy 2 values from Supabase
+1. Go to **Project Settings**
+2. Go to **API**
+3. Copy:
+   - **Project URL** (this is `SUPABASE_URL`)
+   - **service_role key** (this is `SUPABASE_SERVICE_ROLE_KEY`)
+
+⚠️ Keep service_role key secret.
+
+---
+
+## Step 5) Create `.env` file in this project
+Create `.env` and paste this:
+
+```bash
+PORT=3000
+UPLOAD_PASSWORD=mysecret123
+SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
+SUPABASE_BUCKET=private-send-files
+```
+
+### How to change upload password later
+Just change this line in `.env`:
+
+```bash
+UPLOAD_PASSWORD=newpassword456
+```
+
+Save file, then restart server.
+
+---
+
+## Step 6) Install and run
 ```bash
 npm install
 npm start
 ```
 
-### 2) Set your upload password (important)
-Default password is `upload123!` (change this!).
-
-Run server with your own password:
-```bash
-UPLOAD_PASSWORD="my-secret-upload-pass" npm start
-```
-
-Optional custom port:
-```bash
-PORT=3000 UPLOAD_PASSWORD="my-secret-upload-pass" npm start
-```
-
-### 3) Open in browser
+Open browser:
 `http://localhost:3000`
 
 ---
 
-## Notes
-- Code is always 6 digits.
-- Download code is one-time use.
-- Expired files are cleaned up automatically (24 hours).
-- Files are stored on server disk in `data/uploads` until downloaded/expired.
+## How to use
+### Upload
+1. Enter upload password
+2. Pick file
+3. Click Upload
+4. Copy 6-digit code
 
-Open `http://localhost:3000`.
+### Download
+1. Enter 6-digit code
+2. Click Download
+3. File downloads and code becomes invalid
 
-## Troubleshooting
-- "Wrong upload password" → check `UPLOAD_PASSWORD` value.
-- "Code not found or already used" → code is wrong, expired, or already downloaded.
-- If server restarts and data folder is removed, old codes will not work.
+---
+
+## If something fails
+- **Wrong upload password**: password in website does not match `.env`
+- **Code not found/already used**: wrong code, expired code, or already downloaded
+- **Missing SUPABASE_URL or key**: `.env` is missing values
