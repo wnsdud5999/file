@@ -1,371 +1,269 @@
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js';
-import {
-  getAuth,
-  signInWithEmailAndPassword,
-  signOut,
-  onAuthStateChanged
-} from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js';
-import {
-  getFirestore,
-  collection,
-  addDoc,
-  deleteDoc,
-  doc,
-  getDoc,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  setDoc,
-  updateDoc
-} from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-// 1) Paste your Firebase Web app config here.
-const firebaseConfig = {
-  apiKey: "AIzaSyDbRIKSvB5OVK9Td8AklSLmayGwh9Geys0",
-  authDomain: "note-2a6f8.firebaseapp.com",
-  projectId: "note-2a6f8",
-  storageBucket: "note-2a6f8.firebasestorage.app",
-  messagingSenderId: "556359673920",
-  appId: "1:556359673920:web:0e56743418cb667d6797a5",
-};
+// ====== CHANGE THESE 3 VALUES ======
+const SUPABASE_URL = 'https://pnyimurfileqbesoasdl.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBueWltdXJmaWxlcWJlc29hc2RsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0NDczMzAsImV4cCI6MjA5MTAyMzMzMH0.HCj5kpgu0D5b4-b02OkejdJrLdo4XX-ZrfzJ8ceW7UY';
+const SUPABASE_UPLOAD_EMAIL = 'upload-user@example.com';
+// ===================================
 
-// 2) Shared login email. Users type only password in UI.
-const SHARED_EMAIL = 'sharedemail@email.com';
+const BUCKET = 'private-send-files';
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
+const CODE_TTL_MS = 24 * 60 * 60 * 1000;
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-
-const loginCard = document.getElementById('loginCard');
-const appCard = document.getElementById('appCard');
-const passwordInput = document.getElementById('passwordInput');
-const loginBtn = document.getElementById('loginBtn');
-const loginStatus = document.getElementById('loginStatus');
-
-const noteList = document.getElementById('noteList');
-const noteTitleInput = document.getElementById('noteTitleInput');
-const editor = document.getElementById('editor');
-const authorInput = document.getElementById('authorInput');
-const messageInput = document.getElementById('messageInput');
-const commitBtn = document.getElementById('commitBtn');
-const deleteNoteBtn = document.getElementById('deleteNoteBtn');
-const logoutBtn = document.getElementById('logoutBtn');
-const appStatus = document.getElementById('appStatus');
-const commitList = document.getElementById('commitList');
-const newNoteBtn = document.getElementById('newNoteBtn');
-
-let notes = [];
-let selectedNoteId = null;
-let unsubNotes = null;
-let unsubCommits = null;
-
-function setStatus(text, isError = false) {
-  appStatus.textContent = text;
-  appStatus.style.color = isError ? '#f97066' : '#98a2b3';
-}
-
-function showApp() {
-  loginCard.classList.add('hidden');
-  appCard.classList.remove('hidden');
-}
-
-function showLogin() {
-  appCard.classList.add('hidden');
-  loginCard.classList.remove('hidden');
-}
-
-function clearRealtime() {
-  if (unsubNotes) {
-    unsubNotes();
-    unsubNotes = null;
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabasePublic = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false
   }
-  if (unsubCommits) {
-    unsubCommits();
-    unsubCommits = null;
+});
+
+const downloadCodeInput = document.getElementById('downloadCodeInput');
+const downloadBtn = document.getElementById('downloadBtn');
+const downloadStatus = document.getElementById('downloadStatus');
+
+const uploadLoginPasswordInput = document.getElementById('uploadLoginPasswordInput');
+const uploadLoginBtn = document.getElementById('uploadLoginBtn');
+const uploadLogoutBtn = document.getElementById('uploadLogoutBtn');
+const uploadAuthStatus = document.getElementById('uploadAuthStatus');
+
+const fileInput = document.getElementById('fileInput');
+const uploadBtn = document.getElementById('uploadBtn');
+const uploadActions = document.getElementById('uploadActions');
+const uploadHint = document.getElementById('uploadHint');
+const uploadStatus = document.getElementById('uploadStatus');
+const generatedCode = document.getElementById('generatedCode');
+
+let uploadUser = null;
+
+function setStatus(target, message, error = false) {
+  target.textContent = message;
+  target.style.color = error ? '#b42318' : '#475467';
+}
+
+function onlyDigits(value) {
+  return String(value || '').replace(/\D/g, '').slice(0, 6);
+}
+
+function randomCode() {
+  return String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0');
+}
+
+function cleanFileName(name) {
+  return String(name || 'file.bin').replace(/[^a-zA-Z0-9._\- ()]/g, '_');
+}
+
+function refreshUploadAuthUI() {
+  const loggedIn = Boolean(uploadUser);
+  uploadBtn.disabled = !loggedIn;
+  fileInput.disabled = !loggedIn;
+  uploadLogoutBtn.style.display = loggedIn ? 'inline-block' : 'none';
+  uploadActions.classList.toggle('hidden', !loggedIn);
+  uploadHint.style.display = loggedIn ? 'none' : 'block';
+
+  if (loggedIn) {
+    setStatus(uploadAuthStatus, `Upload login active: ${uploadUser.email}`);
+  } else {
+    setStatus(uploadAuthStatus, 'Upload login required.');
   }
 }
 
-function renderNotes() {
-  noteList.innerHTML = '';
+async function createUniqueCode() {
+  for (let i = 0; i < 20; i += 1) {
+    const code = randomCode();
+    const { data, error } = await supabase
+      .from('transfers')
+      .select('code')
+      .eq('code', code)
+      .limit(1);
 
-  notes.forEach((note) => {
-    const li = document.createElement('li');
-    li.className = note.id === selectedNoteId ? 'active' : '';
-
-    const updatedAtText = note.updatedAt
-      ? new Date(note.updatedAt).toLocaleString()
-      : 'just now';
-
-    const titleWrap = document.createElement('div');
-    titleWrap.innerHTML = `<strong>${note.title || 'Untitled note'}</strong><small>${updatedAtText}</small>`;
-
-    li.appendChild(titleWrap);
-    li.addEventListener('click', () => {
-      selectNote(note.id);
-    });
-
-    noteList.appendChild(li);
-  });
-}
-
-function renderCommits(items = []) {
-  commitList.innerHTML = '';
-
-  items.forEach((item) => {
-    const li = document.createElement('li');
-    const ts = item.ts ? new Date(item.ts).toLocaleString() : 'just now';
-    li.textContent = `[${ts}] ${item.author || 'anonymous'}: ${item.message || 'Updated note'}`;
-    commitList.appendChild(li);
-  });
-}
-
-function getSelectedNote() {
-  return notes.find((n) => n.id === selectedNoteId) || null;
-}
-
-function clearEditorPanels() {
-  noteTitleInput.value = '';
-  editor.value = '';
-  renderCommits([]);
-}
-
-function selectNote(noteId) {
-  selectedNoteId = noteId;
-  const selected = getSelectedNote();
-
-  noteTitleInput.value = selected?.title || '';
-  editor.value = selected?.content || '';
-
-  renderNotes();
-  startCommitListener();
-}
-
-async function ensureInitialData() {
-  const noteRef = doc(db, 'notes', 'welcome');
-  const existing = await getDoc(noteRef);
-
-  if (!existing.exists()) {
-    await setDoc(noteRef, {
-      title: 'Welcome note',
-      content: 'Welcome!\n\nCreate notes, edit title/content, and commit changes.',
-      updatedAt: serverTimestamp(),
-      updatedBy: 'system'
-    });
-
-    await addDoc(collection(db, 'notes', 'welcome', 'commits'), {
-      author: 'system',
-      message: 'Initial note created',
-      ts: serverTimestamp()
-    });
+    if (error) throw error;
+    if (!data.length) return code;
   }
+  throw new Error('Could not generate code. Try again.');
 }
 
-async function createNote() {
-  const rawTitle = window.prompt('New note title:', 'New note');
-  if (!rawTitle) return;
-
-  const title = rawTitle.trim() || 'Untitled note';
-  const author = authorInput.value.trim() || 'anonymous';
-  const noteRef = doc(collection(db, 'notes'));
-
-  await setDoc(noteRef, {
-    title,
-    content: '',
-    updatedAt: serverTimestamp(),
-    updatedBy: author
-  });
-
-  await addDoc(collection(db, 'notes', noteRef.id, 'commits'), {
-    author,
-    message: `Created note "${title}"`,
-    ts: serverTimestamp()
-  });
-
-  setStatus('New note created.');
-  selectedNoteId = noteRef.id;
-}
-
-async function commitCurrentNote() {
-  if (!selectedNoteId) {
-    setStatus('Select a note first.', true);
+async function loginForUpload() {
+  if (SUPABASE_URL.includes('REPLACE_') || SUPABASE_ANON_KEY.includes('REPLACE_')) {
+    setStatus(uploadAuthStatus, 'Please set SUPABASE_URL + SUPABASE_ANON_KEY in main.js.', true);
     return;
   }
 
-  commitBtn.disabled = true;
-  setStatus('Committing note...');
+  const password = uploadLoginPasswordInput.value;
+  if (!password) {
+    setStatus(uploadAuthStatus, 'Enter upload account password.', true);
+    return;
+  }
+
+  uploadLoginBtn.disabled = true;
 
   try {
-    const author = authorInput.value.trim() || 'anonymous';
-    const message = messageInput.value.trim() || 'Updated note';
-
-    await updateDoc(doc(db, 'notes', selectedNoteId), {
-      title: noteTitleInput.value.trim() || 'Untitled note',
-      content: editor.value,
-      updatedAt: serverTimestamp(),
-      updatedBy: author
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: SUPABASE_UPLOAD_EMAIL,
+      password
     });
 
-    await addDoc(collection(db, 'notes', selectedNoteId, 'commits'), {
-      author,
-      message,
-      ts: serverTimestamp()
-    });
-
-    messageInput.value = '';
-    setStatus('Committed! Everyone will see this note update.');
-  } catch (err) {
-    setStatus(err.message, true);
+    if (error) throw error;
+    uploadUser = data.user;
+    uploadLoginPasswordInput.value = '';
+    refreshUploadAuthUI();
+    setStatus(uploadStatus, 'Now you can upload files.');
+  } catch (error) {
+    setStatus(uploadAuthStatus, error.message || 'Upload login failed.', true);
   } finally {
-    commitBtn.disabled = false;
+    uploadLoginBtn.disabled = false;
   }
 }
 
-async function deleteCurrentNote() {
-  if (!selectedNoteId) {
-    setStatus('Select a note first.', true);
+async function logoutUpload() {
+  await supabase.auth.signOut();
+  uploadUser = null;
+  refreshUploadAuthUI();
+  setStatus(uploadStatus, 'Upload login removed.');
+}
+
+async function uploadFile() {
+  const file = fileInput.files && fileInput.files[0];
+
+  if (!uploadUser) {
+    setStatus(uploadStatus, 'Please login for upload first.', true);
     return;
   }
 
-  const selected = getSelectedNote();
-  const ok = window.confirm(`Delete note "${selected?.title || 'Untitled note'}"?`);
-  if (!ok) return;
+  if (!file) {
+    setStatus(uploadStatus, 'Pick a file first.', true);
+    return;
+  }
 
-  await deleteDoc(doc(db, 'notes', selectedNoteId));
-  selectedNoteId = null;
-  clearEditorPanels();
-  setStatus('Note deleted.');
-}
+  if (file.size > MAX_UPLOAD_BYTES) {
+    setStatus(uploadStatus, 'File too big. Max is 50 MB.', true);
+    return;
+  }
 
-function startNotesListener() {
-  const notesQuery = query(collection(db, 'notes'), orderBy('updatedAt', 'desc'));
+  uploadBtn.disabled = true;
+  generatedCode.textContent = '';
+  setStatus(uploadStatus, 'Uploading...');
 
-  unsubNotes = onSnapshot(
-    notesQuery,
-    (snapshot) => {
-      notes = snapshot.docs.map((snap) => {
-        const data = snap.data();
-        return {
-          id: snap.id,
-          title: data.title || 'Untitled note',
-          content: data.content || '',
-          updatedAt: data.updatedAt?.toDate?.() ?? null,
-          updatedBy: data.updatedBy || null
-        };
-      });
+  try {
+    const code = await createUniqueCode();
+    const objectPath = `${crypto.randomUUID()}-${cleanFileName(file.name)}`;
 
-      if (!notes.length) {
-        selectedNoteId = null;
-        clearEditorPanels();
-        renderNotes();
-        return;
+    const { error: uploadError } = await supabase.storage
+      .from(BUCKET)
+      .upload(objectPath, file, { upsert: false });
+
+    if (uploadError) throw uploadError;
+
+    const { data: userInfo } = await supabase.auth.getUser();
+    if (!userInfo.user) {
+      await supabase.auth.signOut();
+      uploadUser = null;
+      refreshUploadAuthUI();
+      throw new Error('Upload session expired. Please login again.');
+    }
+
+    const { error: insertError } = await supabase.rpc('create_transfer', {
+      p_code: code,
+      p_object_path: objectPath,
+      p_original_name: cleanFileName(file.name),
+      p_content_type: file.type || 'application/octet-stream',
+      p_created_at: new Date().toISOString()
+    });
+
+    if (insertError) {
+      await supabase.storage.from(BUCKET).remove([objectPath]);
+      if ((insertError.message || '').toLowerCase().includes('row-level security')) {
+        throw new Error('Supabase policy not ready. Run README SQL step again (create_transfer function).');
       }
-
-      if (!selectedNoteId || !notes.some((n) => n.id === selectedNoteId)) {
-        selectedNoteId = notes[0].id;
-      }
-
-      const selected = getSelectedNote();
-      noteTitleInput.value = selected?.title || '';
-      editor.value = selected?.content || '';
-
-      renderNotes();
-      startCommitListener();
-    },
-    (err) => {
-      setStatus(err.message, true);
+      throw insertError;
     }
-  );
+
+    setStatus(uploadStatus, 'Upload done. Share this code:');
+    generatedCode.textContent = code;
+    fileInput.value = '';
+  } catch (error) {
+    setStatus(uploadStatus, error.message || 'Upload failed', true);
+  } finally {
+    uploadBtn.disabled = false;
+  }
 }
 
-function startCommitListener() {
-  if (unsubCommits) {
-    unsubCommits();
-    unsubCommits = null;
-  }
+async function downloadWithCode() {
+  const code = onlyDigits(downloadCodeInput.value);
+  downloadCodeInput.value = code;
 
-  if (!selectedNoteId) {
-    renderCommits([]);
+  if (SUPABASE_URL.includes('REPLACE_') || SUPABASE_ANON_KEY.includes('REPLACE_')) {
+    setStatus(downloadStatus, 'Please set SUPABASE_URL + SUPABASE_ANON_KEY in main.js.', true);
     return;
   }
 
-  const commitsQuery = query(
-    collection(db, 'notes', selectedNoteId, 'commits'),
-    orderBy('ts', 'desc')
-  );
-
-  unsubCommits = onSnapshot(
-    commitsQuery,
-    (snapshot) => {
-      const items = snapshot.docs.slice(0, 20).map((snap) => {
-        const data = snap.data();
-        return {
-          author: data.author || 'anonymous',
-          message: data.message || 'Updated note',
-          ts: data.ts?.toDate?.() ?? null
-        };
-      });
-
-      renderCommits(items);
-    },
-    (err) => {
-      setStatus(err.message, true);
-    }
-  );
-}
-
-loginBtn.addEventListener('click', async () => {
-  loginStatus.textContent = '';
-
-  try {
-    await signInWithEmailAndPassword(auth, SHARED_EMAIL, passwordInput.value);
-    passwordInput.value = '';
-  } catch (err) {
-    loginStatus.textContent = `Login failed: ${err.message}`;
-    loginStatus.style.color = '#f97066';
-  }
-});
-
-newNoteBtn.addEventListener('click', async () => {
-  try {
-    await createNote();
-  } catch (err) {
-    setStatus(err.message, true);
-  }
-});
-
-commitBtn.addEventListener('click', commitCurrentNote);
-deleteNoteBtn.addEventListener('click', async () => {
-  try {
-    await deleteCurrentNote();
-  } catch (err) {
-    setStatus(err.message, true);
-  }
-});
-
-logoutBtn.addEventListener('click', async () => {
-  await signOut(auth);
-});
-
-onAuthStateChanged(auth, async (user) => {
-  if (!user) {
-    clearRealtime();
-    showLogin();
+  if (code.length !== 6) {
+    setStatus(downloadStatus, 'Code must be 6 digits.', true);
     return;
   }
 
-  try {
-    await ensureInitialData();
+  downloadBtn.disabled = true;
+  setStatus(downloadStatus, 'Checking code...');
 
-    if (!unsubNotes) {
-      startNotesListener();
+  try {
+    const { data: rows, error: rowError } = await supabasePublic
+      .from('transfers')
+      .select('code, object_path, original_name, content_type, created_at')
+      .eq('code', code)
+      .limit(1);
+
+    if (rowError) throw rowError;
+    if (!rows.length) throw new Error('Code not found or already used.');
+
+    const transfer = rows[0];
+    const age = Date.now() - new Date(transfer.created_at).getTime();
+
+    if (Number.isFinite(age) && age > CODE_TTL_MS) {
+      await supabasePublic.storage.from(BUCKET).remove([transfer.object_path]);
+      await supabasePublic.from('transfers').delete().eq('code', code);
+      throw new Error('Code expired.');
     }
 
-    showApp();
-    setStatus('Connected.');
-  } catch (err) {
-    showLogin();
-    loginStatus.textContent = `Setup error: ${err.message}`;
-    loginStatus.style.color = '#f97066';
+    const { data: fileData, error: downloadError } = await supabasePublic.storage
+      .from(BUCKET)
+      .download(transfer.object_path);
+
+    if (downloadError) throw downloadError;
+
+    await supabasePublic.storage.from(BUCKET).remove([transfer.object_path]);
+    await supabasePublic.from('transfers').delete().eq('code', code);
+
+    const blob = new Blob([fileData], { type: transfer.content_type || 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = transfer.original_name || `download-${code}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
+    setStatus(downloadStatus, 'Downloaded. Code is now used and deleted.');
+    downloadCodeInput.value = '';
+  } catch (error) {
+    setStatus(downloadStatus, error.message || 'Download failed', true);
+  } finally {
+    downloadBtn.disabled = false;
   }
+}
+
+downloadCodeInput.addEventListener('input', () => {
+  downloadCodeInput.value = onlyDigits(downloadCodeInput.value);
 });
+
+uploadLoginBtn.addEventListener('click', loginForUpload);
+uploadLogoutBtn.addEventListener('click', logoutUpload);
+downloadBtn.addEventListener('click', downloadWithCode);
+uploadBtn.addEventListener('click', uploadFile);
+
+(async () => {
+  const { data } = await supabase.auth.getSession();
+  uploadUser = data.session?.user || null;
+  refreshUploadAuthUI();
+})();
