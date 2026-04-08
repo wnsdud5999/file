@@ -1,81 +1,127 @@
-# Shared Firebase Notes (GitHub Pages compatible)
+# Private Send (Supabase only, no custom server)
 
-This website is static (works on GitHub Pages) and uses Firebase for:
-- password login,
-- multiple notes (create/edit title/content/delete),
-- per-note commit history,
-- realtime updates.
+If you saw this error on upload:
+`new row violates row-level security policy`
+that means SQL setup is incomplete.
 
-No backend server is needed.
+Use the exact SQL below (copy-paste all), then upload works.
+
+If SQL stops with "policy already exists", the rest of the script does **not** run.
+That can leave setup half-finished (for example function/grant not created).
 
 ---
 
-## Easy setup (step by step)
+## What this does
+1. Upload user logs in with Supabase Auth (email/password)
+2. Upload file (max 50 MB)
+3. Get random 6-digit code
+4. Downloader enters code
+5. File is downloaded once, then deleted
 
-## 1) In Firebase: create project + web app
+---
 
-1. Open Firebase Console and create a project.
-2. Add a **Web app**.
-3. Copy the web config values (`apiKey`, `authDomain`, `projectId`, `storageBucket`, `messagingSenderId`, `appId`).
+## Setup (important: do in this order)
 
-## 2) In Firebase: enable login and create shared user
+### 1) Create Supabase project
 
-1. Open **Authentication → Sign-in method** and enable **Email/Password**.
-2. Open **Authentication → Users** and create one user:
-   - Email: `sharedemail@email.com` (or your own)
-   - Password: `wnsdud5999@` (or your own)
+### 2) Create private bucket
+- Storage -> New bucket
+- Name: `private-send-files`
+- Private bucket
 
-## 3) In Firebase: create Firestore database
+### 3) Create upload auth user
+- Authentication -> Users -> Add user
+- Example email: `upload-user@example.com`
+- Set password (this password is used on upload login)
 
-1. Open **Firestore Database** and create database in production mode.
-2. Open **Rules** and paste this:
+### 4) Run SQL (copy all)
+Open SQL Editor and run:
 
-```txt
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /notes/{noteId} {
-      allow read, write: if request.auth != null;
+```sql
+create table if not exists public.transfers (
+  code text primary key,
+  object_path text not null,
+  original_name text not null,
+  content_type text,
+  created_at timestamptz not null default now()
+);
 
-      match /commits/{commitId} {
-        allow read, write: if request.auth != null;
-      }
-    }
-  }
-}
+alter table public.transfers enable row level security;
+
+-- rerun-safe: drop old policies first (important)
+drop policy if exists "anon can read transfers" on public.transfers;
+drop policy if exists "anon can delete transfers" on public.transfers;
+drop policy if exists "authenticated can upload files" on storage.objects;
+drop policy if exists "anon can read files" on storage.objects;
+drop policy if exists "anon can delete files" on storage.objects;
+
+-- allow download side (anon) to read/delete by code
+create policy "anon can read transfers"
+on public.transfers for select
+to anon using (true);
+
+create policy "anon can delete transfers"
+on public.transfers for delete
+to anon using (true);
+
+-- storage rules
+create policy "authenticated can upload files"
+on storage.objects for insert
+to authenticated with check (bucket_id = 'private-send-files');
+
+create policy "anon can read files"
+on storage.objects for select
+to anon using (bucket_id = 'private-send-files');
+
+create policy "anon can delete files"
+on storage.objects for delete
+to anon using (bucket_id = 'private-send-files');
+
+-- function used by app to create transfer row safely
+create or replace function public.create_transfer(
+  p_code text,
+  p_object_path text,
+  p_original_name text,
+  p_content_type text,
+  p_created_at timestamptz
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.role() <> 'authenticated' then
+    raise exception 'not authenticated';
+  end if;
+
+  insert into public.transfers (code, object_path, original_name, content_type, created_at)
+  values (p_code, p_object_path, p_original_name, p_content_type, p_created_at);
+end;
+$$;
+
+grant execute on function public.create_transfer(text, text, text, text, timestamptz) to authenticated;
 ```
 
-## 4) Edit `main.js`
+### 5) Get API values
+Project Settings -> API:
+- Project URL
+- anon public key
 
-Replace these values:
-- all `REPLACE_ME` entries in `firebaseConfig`
-- `SHARED_EMAIL`
+### 6) Edit `main.js`
 
-Important:
-- The entered password on the site must match the shared Firebase user password.
+```js
+const SUPABASE_URL = 'YOUR_PROJECT_URL';
+const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY';
+const SUPABASE_UPLOAD_EMAIL = 'upload-user@example.com';
+```
 
-## 5) Deploy on GitHub Pages
-
-1. Push this repo to GitHub.
-2. Open **Settings → Pages**.
-3. Deploy from branch root.
-4. Open your Pages URL.
-
----
-
-## What to do on the website
-
-- Enter shared password.
-- Click **+ New note** to create notes.
-- Edit note title + text.
-- Click **Commit changes**.
-- See recent commits for the selected note.
-- Click **Delete note** if needed.
+### 7) Run site
+Open `index.html` (or deploy static hosting).
 
 ---
 
-## Troubleshooting
+## Change upload password
+Supabase -> Authentication -> Users -> choose upload user -> reset password.
 
-- **Login failed (`auth/api-key-not-valid`)**: your `firebaseConfig` still has wrong or placeholder values.
-- **Login failed (`auth/invalid-credential`)**: `SHARED_EMAIL`, password, or project is mismatched.
-- **No notes visible / write errors**: Firestore rules were not applied.
+No code change needed unless upload email changes.
