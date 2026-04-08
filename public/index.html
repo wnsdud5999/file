@@ -43,40 +43,35 @@
   <body>
     <div class="container">
       <div class="card" style="margin-bottom: 14px;">
-        <h1>Private Send</h1>
-        <p>Send one file with a 6-digit code. Receiver can download <strong>one time only</strong> (file auto-deletes).</p>
-        <ul>
-          <li>Step 1: Login + upload file</li>
-          <li>Step 2: Share the 6-digit code</li>
-          <li>Step 3: Receiver enters code to download once</li>
-        </ul>
+        <h1>Portal</h1>
+        <p>Proceed if you already know what to do.</p>
       </div>
 
       <div class="grid">
         <section class="card">
-          <h1>Receive file</h1>
-          <p>Paste the 6-digit code from the sender.</p>
+          <h1>Side A</h1>
+          <p>Enter value.</p>
           <div class="row">
-            <input id="downloadCodeInput" maxlength="6" placeholder="123456" inputmode="numeric" />
-            <button id="downloadBtn">Download</button>
+            <input id="downloadCodeInput" maxlength="6" placeholder="000000" inputmode="numeric" />
+            <button id="downloadBtn">Go</button>
           </div>
           <div id="downloadStatus" class="status"></div>
         </section>
 
         <section class="card">
-          <h1>Send file</h1>
-          <p>Only approved uploader can send files (login required).</p>
+          <h1>Side B</h1>
+          <p>Restricted area.</p>
           <div class="row">
-            <input id="uploadLoginPasswordInput" type="password" placeholder="Upload account password" />
-            <button id="uploadLoginBtn">Login</button>
-            <button id="uploadLogoutBtn" style="display:none">Logout</button>
+            <input id="uploadLoginPasswordInput" type="password" placeholder="Passphrase" />
+            <button id="uploadLoginBtn">Enter</button>
+            <button id="uploadLogoutBtn" style="display:none">Exit</button>
           </div>
           <div id="uploadAuthStatus" class="status"></div>
           <div id="uploadActions" class="row hidden">
             <input id="fileInput" type="file" />
-            <button id="uploadBtn">Upload</button>
+            <button id="uploadBtn">Continue</button>
           </div>
-          <p id="uploadHint" class="status muted">Login first to reveal upload button.</p>
+          <p id="uploadHint" class="status muted">Locked.</p>
           <div id="uploadStatus" class="status"></div>
           <div id="generatedCode" class="big-code"></div>
         </section>

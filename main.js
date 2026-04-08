@@ -63,9 +63,9 @@ function refreshUploadAuthUI() {
   uploadHint.style.display = loggedIn ? 'none' : 'block';
 
   if (loggedIn) {
-    setStatus(uploadAuthStatus, `Upload login active: ${uploadUser.email}`);
+    setStatus(uploadAuthStatus, `Access active: ${uploadUser.email}`);
   } else {
-    setStatus(uploadAuthStatus, 'Upload login required.');
+    setStatus(uploadAuthStatus, 'Access required.');
   }
 }
 
@@ -108,7 +108,7 @@ async function loginForUpload() {
     uploadUser = data.user;
     uploadLoginPasswordInput.value = '';
     refreshUploadAuthUI();
-    setStatus(uploadStatus, 'Now you can upload files.');
+    setStatus(uploadStatus, 'Access granted.');
   } catch (error) {
     setStatus(uploadAuthStatus, error.message || 'Upload login failed.', true);
   } finally {
@@ -120,30 +120,30 @@ async function logoutUpload() {
   await supabase.auth.signOut();
   uploadUser = null;
   refreshUploadAuthUI();
-  setStatus(uploadStatus, 'Upload login removed.');
+  setStatus(uploadStatus, 'Access closed.');
 }
 
 async function uploadFile() {
   const file = fileInput.files && fileInput.files[0];
 
   if (!uploadUser) {
-    setStatus(uploadStatus, 'Please login for upload first.', true);
+    setStatus(uploadStatus, 'Access required first.', true);
     return;
   }
 
   if (!file) {
-    setStatus(uploadStatus, 'Pick a file first.', true);
+    setStatus(uploadStatus, 'Select an item first.', true);
     return;
   }
 
   if (file.size > MAX_UPLOAD_BYTES) {
-    setStatus(uploadStatus, 'File too big. Max is 50 MB.', true);
+    setStatus(uploadStatus, 'Item too large (max 50 MB).', true);
     return;
   }
 
   uploadBtn.disabled = true;
   generatedCode.textContent = '';
-  setStatus(uploadStatus, 'Uploading...');
+  setStatus(uploadStatus, 'Working...');
 
   try {
     const code = await createUniqueCode();
@@ -160,7 +160,7 @@ async function uploadFile() {
       await supabase.auth.signOut();
       uploadUser = null;
       refreshUploadAuthUI();
-      throw new Error('Upload session expired. Please login again.');
+      throw new Error('Session expired. Re-enter access.');
     }
 
     const { error: insertError } = await supabase.rpc('create_transfer', {
@@ -174,16 +174,16 @@ async function uploadFile() {
     if (insertError) {
       await supabase.storage.from(BUCKET).remove([objectPath]);
       if ((insertError.message || '').toLowerCase().includes('row-level security')) {
-        throw new Error('Supabase policy not ready. Run README SQL step again (create_transfer function).');
+        throw new Error('Setup not ready. Complete SQL setup and retry.');
       }
       throw insertError;
     }
 
-    setStatus(uploadStatus, 'Upload done. Share this code:');
+    setStatus(uploadStatus, 'Done. Use this value:');
     generatedCode.textContent = code;
     fileInput.value = '';
   } catch (error) {
-    setStatus(uploadStatus, error.message || 'Upload failed', true);
+    setStatus(uploadStatus, error.message || 'Action failed', true);
   } finally {
     uploadBtn.disabled = false;
   }
@@ -199,12 +199,12 @@ async function downloadWithCode() {
   }
 
   if (code.length !== 6) {
-    setStatus(downloadStatus, 'Code must be 6 digits.', true);
+    setStatus(downloadStatus, 'Value must be 6 digits.', true);
     return;
   }
 
   downloadBtn.disabled = true;
-  setStatus(downloadStatus, 'Checking code...');
+  setStatus(downloadStatus, 'Checking...');
 
   try {
     const { data: rows, error: rowError } = await supabasePublic
@@ -214,7 +214,7 @@ async function downloadWithCode() {
       .limit(1);
 
     if (rowError) throw rowError;
-    if (!rows.length) throw new Error('Code not found or already used.');
+    if (!rows.length) throw new Error('Value not found or already used.');
 
     const transfer = rows[0];
     const age = Date.now() - new Date(transfer.created_at).getTime();
@@ -222,7 +222,7 @@ async function downloadWithCode() {
     if (Number.isFinite(age) && age > CODE_TTL_MS) {
       await supabasePublic.storage.from(BUCKET).remove([transfer.object_path]);
       await supabasePublic.from('transfers').delete().eq('code', code);
-      throw new Error('Code expired.');
+      throw new Error('Value expired.');
     }
 
     const { data: fileData, error: downloadError } = await supabasePublic.storage
@@ -244,10 +244,10 @@ async function downloadWithCode() {
     a.remove();
     URL.revokeObjectURL(url);
 
-    setStatus(downloadStatus, 'Downloaded. Code is now used and deleted.');
+    setStatus(downloadStatus, 'Completed. Value is now invalid.');
     downloadCodeInput.value = '';
   } catch (error) {
-    setStatus(downloadStatus, error.message || 'Download failed', true);
+    setStatus(downloadStatus, error.message || 'Action failed', true);
   } finally {
     downloadBtn.disabled = false;
   }
