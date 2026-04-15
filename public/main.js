@@ -1,14 +1,15 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-// ====== CHANGE THESE 3 VALUES ======
+// ====== CHANGE THESE 4 VALUES ======
 const SUPABASE_URL = 'https://pnyimurfileqbesoasdl.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBueWltdXJmaWxlcWJlc29hc2RsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0NDczMzAsImV4cCI6MjA5MTAyMzMzMH0.HCj5kpgu0D5b4-b02OkejdJrLdo4XX-ZrfzJ8ceW7UY';
 const SUPABASE_UPLOAD_EMAIL = 'upload-user@example.com';
+const SUPABASE_ADMIN_EMAIL = 'admin@email.com';
 // ===================================
 
 const BUCKET = 'private-send-files';
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
-const CODE_TTL_MS = 24 * 60 * 60 * 1000;
+const RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const CODE_LENGTH = 3;
 const LEGACY_CODE_LENGTH = 6;
 
@@ -25,7 +26,10 @@ const downloadCodeInput = document.getElementById('downloadCodeInput');
 const downloadBtn = document.getElementById('downloadBtn');
 const downloadStatus = document.getElementById('downloadStatus');
 
+const accessModeInput = document.getElementById('accessModeInput');
 const uploadLoginPasswordInput = document.getElementById('uploadLoginPasswordInput');
+const adminPasswordWrap = document.getElementById('adminPasswordWrap');
+const adminPasswordInput = document.getElementById('adminPasswordInput');
 const uploadLoginBtn = document.getElementById('uploadLoginBtn');
 const uploadLogoutBtn = document.getElementById('uploadLogoutBtn');
 const uploadAuthStatus = document.getElementById('uploadAuthStatus');
@@ -39,10 +43,17 @@ const uploadHint = document.getElementById('uploadHint');
 const uploadStatus = document.getElementById('uploadStatus');
 const generatedCode = document.getElementById('generatedCode');
 
+const adminPanel = document.getElementById('adminPanel');
+const adminRefreshBtn = document.getElementById('adminRefreshBtn');
+const adminLogStatus = document.getElementById('adminLogStatus');
+const adminLogList = document.getElementById('adminLogList');
+
 let uploadUser = null;
+let adminUser = null;
 let selectedUploadFile = null;
 
 function setStatus(target, message, error = false) {
+  if (!target) return;
   target.textContent = message;
   target.style.color = error ? '#ff6b6b' : '#b8b8c5';
 }
@@ -64,19 +75,55 @@ function cleanFileName(name) {
   return String(name || 'file.bin').replace(/[^a-zA-Z0-9._\- ()]/g, '_');
 }
 
-function refreshUploadAuthUI() {
-  const loggedIn = Boolean(uploadUser);
-  uploadBtn.disabled = !loggedIn;
-  fileInput.disabled = !loggedIn;
-  uploadLogoutBtn.style.display = loggedIn ? 'inline-block' : 'none';
-  uploadActions.classList.toggle('hidden', !loggedIn);
-  uploadHint.style.display = loggedIn ? 'none' : 'block';
+function isAdminMode() {
+  return String(accessModeInput?.value || '').trim().toLowerCase() === 'admin';
+}
 
-  if (loggedIn) {
+function isFresh(createdAt) {
+  const age = Date.now() - new Date(createdAt).getTime();
+  return Number.isFinite(age) && age <= RETENTION_MS;
+}
+
+function triggerDownload(blobLike, filename, contentType) {
+  const blob = new Blob([blobLike], { type: contentType || 'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+function setAdminModeUI() {
+  const showAdminPassword = isAdminMode() && !adminUser;
+  if (adminPasswordWrap) {
+    adminPasswordWrap.classList.toggle('hidden', !showAdminPassword);
+  }
+}
+
+function refreshUploadAuthUI() {
+  const loggedInUploader = Boolean(uploadUser);
+  const loggedInAdmin = Boolean(adminUser);
+
+  uploadBtn.disabled = !loggedInUploader;
+  fileInput.disabled = !loggedInUploader;
+
+  uploadLogoutBtn.style.display = loggedInUploader || loggedInAdmin ? 'inline-block' : 'none';
+  uploadActions.classList.toggle('hidden', !loggedInUploader);
+  uploadHint.style.display = loggedInUploader || loggedInAdmin ? 'none' : 'block';
+  adminPanel.classList.toggle('hidden', !loggedInAdmin);
+
+  if (loggedInUploader) {
     setStatus(uploadAuthStatus, `Access active: ${uploadUser.email}`);
+  } else if (loggedInAdmin) {
+    setStatus(uploadAuthStatus, `Admin active: ${adminUser.email}`);
   } else {
     setStatus(uploadAuthStatus, 'Access required.');
   }
+
+  setAdminModeUI();
 }
 
 async function createUniqueCode() {
@@ -94,21 +141,45 @@ async function createUniqueCode() {
   throw new Error('Could not generate code. Try again.');
 }
 
-async function loginForUpload() {
+async function loginForUploadOrAdmin() {
   if (SUPABASE_URL.includes('REPLACE_') || SUPABASE_ANON_KEY.includes('REPLACE_')) {
     setStatus(uploadAuthStatus, 'Please set SUPABASE_URL + SUPABASE_ANON_KEY in main.js.', true);
-    return;
-  }
-
-  const password = uploadLoginPasswordInput.value;
-  if (!password) {
-    setStatus(uploadAuthStatus, 'Enter upload account password.', true);
     return;
   }
 
   uploadLoginBtn.disabled = true;
 
   try {
+    const modeIsAdmin = isAdminMode();
+    if (modeIsAdmin) {
+      if (!adminPasswordInput.value) {
+        setAdminModeUI();
+        setStatus(uploadAuthStatus, 'Admin password needed.', true);
+        return;
+      }
+
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: SUPABASE_ADMIN_EMAIL,
+        password: adminPasswordInput.value
+      });
+
+      if (error) throw error;
+      adminUser = data.user;
+      uploadUser = null;
+      adminPasswordInput.value = '';
+      uploadLoginPasswordInput.value = '';
+      refreshUploadAuthUI();
+      setStatus(uploadStatus, 'Admin access granted.');
+      await loadAdminLogs();
+      return;
+    }
+
+    const password = uploadLoginPasswordInput.value;
+    if (!password) {
+      setStatus(uploadAuthStatus, 'Enter upload account password.', true);
+      return;
+    }
+
     const { data, error } = await supabase.auth.signInWithPassword({
       email: SUPABASE_UPLOAD_EMAIL,
       password
@@ -116,11 +187,13 @@ async function loginForUpload() {
 
     if (error) throw error;
     uploadUser = data.user;
+    adminUser = null;
     uploadLoginPasswordInput.value = '';
+    adminPasswordInput.value = '';
     refreshUploadAuthUI();
     setStatus(uploadStatus, 'Access granted.');
   } catch (error) {
-    setStatus(uploadAuthStatus, error.message || 'Upload login failed.', true);
+    setStatus(uploadAuthStatus, error.message || 'Login failed.', true);
   } finally {
     uploadLoginBtn.disabled = false;
   }
@@ -129,9 +202,14 @@ async function loginForUpload() {
 async function logoutUpload() {
   await supabase.auth.signOut();
   uploadUser = null;
+  adminUser = null;
   selectedUploadFile = null;
   fileInput.value = '';
   updateSelectedFileName(null);
+  uploadLoginPasswordInput.value = '';
+  adminPasswordInput.value = '';
+  if (adminLogList) adminLogList.innerHTML = '';
+  setStatus(adminLogStatus, '');
   refreshUploadAuthUI();
   setStatus(uploadStatus, 'Access closed.');
 }
@@ -140,7 +218,7 @@ async function uploadFile() {
   const file = selectedUploadFile || (fileInput.files && fileInput.files[0]);
 
   if (!uploadUser) {
-    setStatus(uploadStatus, 'Access required first.', true);
+    setStatus(uploadStatus, 'Upload access required first.', true);
     return;
   }
 
@@ -186,9 +264,6 @@ async function uploadFile() {
 
     if (insertError) {
       await supabase.storage.from(BUCKET).remove([objectPath]);
-      if ((insertError.message || '').toLowerCase().includes('row-level security')) {
-        throw new Error('Setup not ready. Complete SQL setup and retry.');
-      }
       throw insertError;
     }
 
@@ -222,21 +297,20 @@ async function downloadWithCode() {
   setStatus(downloadStatus, 'Checking...');
 
   try {
-    const { data: rows, error: rowError } = await supabasePublic
-      .from('transfers')
-      .select('code, object_path, original_name, content_type, created_at')
-      .eq('code', code)
-      .limit(1);
+    const { data: consumed, error: consumeError } = await supabasePublic.rpc('consume_transfer', {
+      p_code: code
+    });
 
-    if (rowError) throw rowError;
-    if (!rows.length) throw new Error('Value not found or already used.');
+    if (consumeError) throw consumeError;
+    const transfer = Array.isArray(consumed) ? consumed[0] : consumed;
 
-    const transfer = rows[0];
-    const age = Date.now() - new Date(transfer.created_at).getTime();
+    if (!transfer) {
+      throw new Error('Value not found or already used.');
+    }
 
-    if (Number.isFinite(age) && age > CODE_TTL_MS) {
+    if (!isFresh(transfer.created_at)) {
       await supabasePublic.storage.from(BUCKET).remove([transfer.object_path]);
-      await supabasePublic.from('transfers').delete().eq('code', code);
+      await supabasePublic.from('transfers').delete().eq('object_path', transfer.object_path);
       throw new Error('Value expired.');
     }
 
@@ -246,18 +320,7 @@ async function downloadWithCode() {
 
     if (downloadError) throw downloadError;
 
-    await supabasePublic.storage.from(BUCKET).remove([transfer.object_path]);
-    await supabasePublic.from('transfers').delete().eq('code', code);
-
-    const blob = new Blob([fileData], { type: transfer.content_type || 'application/octet-stream' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = transfer.original_name || `download-${code}`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    triggerDownload(fileData, transfer.original_name || `download-${code}`, transfer.content_type);
 
     setStatus(downloadStatus, 'Completed. Value is now invalid.');
     downloadCodeInput.value = '';
@@ -268,14 +331,115 @@ async function downloadWithCode() {
   }
 }
 
+async function adminDownload(objectPath, originalName, contentType) {
+  if (!adminUser) {
+    setStatus(adminLogStatus, 'Admin access required.', true);
+    return;
+  }
+
+  try {
+    const { data, error } = await supabase.storage.from(BUCKET).download(objectPath);
+    if (error) throw error;
+    triggerDownload(data, originalName || 'file.bin', contentType);
+  } catch (error) {
+    setStatus(adminLogStatus, error.message || 'Admin download failed.', true);
+  }
+}
+
+function renderAdminRows(rows) {
+  adminLogList.innerHTML = '';
+
+  if (!rows.length) {
+    setStatus(adminLogStatus, 'No transfer logs found.');
+    return;
+  }
+
+  const freshRows = rows.filter((row) => isFresh(row.created_at));
+  if (!freshRows.length) {
+    setStatus(adminLogStatus, 'No logs in last 7 days.');
+    return;
+  }
+
+  setStatus(adminLogStatus, `Showing ${freshRows.length} item(s), last 7 days.`);
+
+  freshRows.forEach((row) => {
+    const entry = document.createElement('div');
+    entry.className = 'admin-log-item';
+
+    const top = document.createElement('div');
+    top.className = 'admin-log-head';
+    const codeState = row.code_used_at ? 'used' : 'active';
+    top.textContent = `${row.original_name} · ${codeState}`;
+
+    const meta = document.createElement('div');
+    meta.className = 'admin-log-meta';
+    meta.textContent = `Created: ${new Date(row.created_at).toLocaleString()}`;
+
+    const rowActions = document.createElement('div');
+    rowActions.className = 'admin-log-actions';
+    const dlBtn = document.createElement('button');
+    dlBtn.type = 'button';
+    dlBtn.textContent = 'Download';
+    dlBtn.addEventListener('click', () => {
+      adminDownload(row.object_path, row.original_name, row.content_type);
+    });
+
+    rowActions.appendChild(dlBtn);
+
+    entry.appendChild(top);
+    entry.appendChild(meta);
+    entry.appendChild(rowActions);
+    adminLogList.appendChild(entry);
+  });
+}
+
+async function loadAdminLogs() {
+  if (!adminUser) return;
+
+  adminRefreshBtn.disabled = true;
+  setStatus(adminLogStatus, 'Loading...');
+
+  try {
+    const { data: rows, error } = await supabase
+      .from('transfers')
+      .select('code, object_path, original_name, content_type, created_at, code_used_at')
+      .order('created_at', { ascending: false })
+      .limit(200);
+
+    if (error) throw error;
+
+    const expiredRows = rows.filter((row) => !isFresh(row.created_at));
+    for (const row of expiredRows) {
+      await supabase.storage.from(BUCKET).remove([row.object_path]);
+      await supabase.from('transfers').delete().eq('object_path', row.object_path);
+    }
+
+    const activeRows = rows.filter((row) => isFresh(row.created_at));
+    renderAdminRows(activeRows);
+  } catch (error) {
+    setStatus(adminLogStatus, error.message || 'Could not load admin logs.', true);
+  } finally {
+    adminRefreshBtn.disabled = false;
+  }
+}
+
 downloadCodeInput.addEventListener('input', () => {
   downloadCodeInput.value = onlyDigits(downloadCodeInput.value);
 });
 
-uploadLoginBtn.addEventListener('click', loginForUpload);
+accessModeInput.addEventListener('input', () => {
+  if (!isAdminMode()) {
+    adminPasswordInput.value = '';
+  }
+  setAdminModeUI();
+});
+
+uploadLoginBtn.addEventListener('click', loginForUploadOrAdmin);
 uploadLogoutBtn.addEventListener('click', logoutUpload);
 downloadBtn.addEventListener('click', downloadWithCode);
 uploadBtn.addEventListener('click', uploadFile);
+adminRefreshBtn.addEventListener('click', loadAdminLogs);
+
 fileInput.addEventListener('change', () => {
   selectedUploadFile = fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
   updateSelectedFileName(selectedUploadFile);
@@ -308,6 +472,7 @@ function bindDropZone() {
   });
 
   dropZone.addEventListener('drop', (event) => {
+    if (!uploadUser) return;
     const droppedFile = event.dataTransfer?.files?.[0] || null;
     if (!droppedFile) return;
     selectedUploadFile = droppedFile;
@@ -318,8 +483,19 @@ function bindDropZone() {
 
 (async () => {
   const { data } = await supabase.auth.getSession();
-  uploadUser = data.session?.user || null;
+  const user = data.session?.user || null;
+
+  if (user && user.email === SUPABASE_UPLOAD_EMAIL) {
+    uploadUser = user;
+  } else if (user && user.email === SUPABASE_ADMIN_EMAIL) {
+    adminUser = user;
+  }
+
   refreshUploadAuthUI();
   updateSelectedFileName(null);
   bindDropZone();
+
+  if (adminUser) {
+    await loadAdminLogs();
+  }
 })();

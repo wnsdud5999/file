@@ -1,83 +1,118 @@
-# Private Send (Supabase only, no custom server)
+# Private Send (Supabase only)
 
-If you saw this error on upload:
-`new row violates row-level security policy`
-that means SQL setup is incomplete.
+This app is fully client-side and uses only Supabase.
 
-Use the exact SQL below (copy-paste all), then upload works.
+## What changed
+- Normal user gets a short code and downloader can use it **one time only**.
+- After first download, that code cannot be reused.
+- File is kept for up to **7 days** for admin log access.
+- Admin can view transfer logs and download files within 7 days.
 
-If SQL stops with "policy already exists", the rest of the script does **not** run.
-That can leave setup half-finished (for example function/grant not created).
+## Accounts you need in Supabase Auth
+Create these users in **Authentication -> Users**:
+- Upload user email (example): `upload-user@example.com`
+- Admin user email: `admin@email.com`
 
----
-
-## What this does
-1. Upload user logs in with Supabase Auth (email/password)
-2. Upload file (max 50 MB)
-3. Get random 3-digit code
-4. Downloader enters code (3-digit new code, 6-digit old code still works)
-5. File is downloaded once, then deleted
-
----
-
-## Setup (important: do in this order)
-
-### 1) Create Supabase project
-
-### 2) Create private bucket
-- Storage -> New bucket
+## Storage setup
+Create private bucket:
 - Name: `private-send-files`
-- Private bucket
+- Visibility: private
 
-### 3) Create upload auth user
-- Authentication -> Users -> Add user
-- Example email: `upload-user@example.com`
-- Set password (this password is used on upload login)
-
-### 4) Run SQL (copy all)
-Open SQL Editor and run:
+## SQL setup (run all at once)
+Open SQL Editor and run this whole script:
 
 ```sql
 create table if not exists public.transfers (
   code text primary key,
-  object_path text not null,
+  object_path text not null unique,
   original_name text not null,
   content_type text,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  code_used_at timestamptz
 );
 
 alter table public.transfers enable row level security;
 
--- rerun-safe: drop old policies first (important)
-drop policy if exists "anon can read transfers" on public.transfers;
-drop policy if exists "anon can delete transfers" on public.transfers;
-drop policy if exists "authenticated can upload files" on storage.objects;
-drop policy if exists "anon can read files" on storage.objects;
-drop policy if exists "anon can delete files" on storage.objects;
+-- rerun-safe policy cleanup
+-- table policies
+ drop policy if exists "anon can read active transfers" on public.transfers;
+ drop policy if exists "anon can delete expired transfers" on public.transfers;
+ drop policy if exists "admin can view logs" on public.transfers;
+ drop policy if exists "admin can delete logs" on public.transfers;
 
--- allow download side (anon) to read/delete by code
-create policy "anon can read transfers"
+-- storage policies
+ drop policy if exists "authenticated can upload files" on storage.objects;
+ drop policy if exists "anon can read files" on storage.objects;
+ drop policy if exists "anon can delete expired files" on storage.objects;
+ drop policy if exists "admin can read files" on storage.objects;
+ drop policy if exists "admin can delete files" on storage.objects;
+
+-- active code lookup only (code not consumed + not older than 7 days)
+create policy "anon can read active transfers"
 on public.transfers for select
-to anon using (true);
+to anon using (
+  code_used_at is null
+  and created_at > now() - interval '7 days'
+);
 
-create policy "anon can delete transfers"
+-- allow anon cleanup for expired rows only
+create policy "anon can delete expired transfers"
 on public.transfers for delete
-to anon using (true);
+to anon using (
+  created_at <= now() - interval '7 days'
+);
 
--- storage rules
+-- admin can view/delete all transfer logs
+create policy "admin can view logs"
+on public.transfers for select
+to authenticated using (
+  auth.jwt() ->> 'email' = 'admin@email.com'
+);
+
+create policy "admin can delete logs"
+on public.transfers for delete
+to authenticated using (
+  auth.jwt() ->> 'email' = 'admin@email.com'
+);
+
+-- upload account can upload objects
 create policy "authenticated can upload files"
 on storage.objects for insert
-to authenticated with check (bucket_id = 'private-send-files');
+to authenticated with check (
+  bucket_id = 'private-send-files'
+);
 
+-- anon can read from bucket (download side)
 create policy "anon can read files"
 on storage.objects for select
-to anon using (bucket_id = 'private-send-files');
+to anon using (
+  bucket_id = 'private-send-files'
+);
 
-create policy "anon can delete files"
+-- anon can delete only expired files from bucket
+create policy "anon can delete expired files"
 on storage.objects for delete
-to anon using (bucket_id = 'private-send-files');
+to anon using (
+  bucket_id = 'private-send-files'
+  and created_at <= now() - interval '7 days'
+);
 
--- function used by app to create transfer row safely
+-- admin can read/delete any file in bucket
+create policy "admin can read files"
+on storage.objects for select
+to authenticated using (
+  bucket_id = 'private-send-files'
+  and auth.jwt() ->> 'email' = 'admin@email.com'
+);
+
+create policy "admin can delete files"
+on storage.objects for delete
+to authenticated using (
+  bucket_id = 'private-send-files'
+  and auth.jwt() ->> 'email' = 'admin@email.com'
+);
+
+-- upload record creation (authenticated uploader)
 create or replace function public.create_transfer(
   p_code text,
   p_object_path text,
@@ -95,33 +130,83 @@ begin
     raise exception 'not authenticated';
   end if;
 
-  insert into public.transfers (code, object_path, original_name, content_type, created_at)
-  values (p_code, p_object_path, p_original_name, p_content_type, p_created_at);
+  insert into public.transfers (
+    code,
+    object_path,
+    original_name,
+    content_type,
+    created_at,
+    code_used_at
+  )
+  values (
+    p_code,
+    p_object_path,
+    p_original_name,
+    p_content_type,
+    p_created_at,
+    null
+  );
 end;
 $$;
 
 grant execute on function public.create_transfer(text, text, text, text, timestamptz) to authenticated;
+
+-- one-time consume code for downloader (anon)
+create or replace function public.consume_transfer(p_code text)
+returns table (
+  code text,
+  object_path text,
+  original_name text,
+  content_type text,
+  created_at timestamptz,
+  code_used_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  found_row public.transfers%rowtype;
+begin
+  update public.transfers
+  set code_used_at = now()
+  where transfers.code = p_code
+    and transfers.code_used_at is null
+    and transfers.created_at > now() - interval '7 days'
+  returning * into found_row;
+
+  if found_row is null then
+    return;
+  end if;
+
+  code := found_row.code;
+  object_path := found_row.object_path;
+  original_name := found_row.original_name;
+  content_type := found_row.content_type;
+  created_at := found_row.created_at;
+  code_used_at := found_row.code_used_at;
+  return next;
+end;
+$$;
+
+grant execute on function public.consume_transfer(text) to anon;
 ```
 
-### 5) Get API values
-Project Settings -> API:
-- Project URL
-- anon public key
-
-### 6) Edit `main.js`
+## App config in `main.js`
 
 ```js
 const SUPABASE_URL = 'YOUR_PROJECT_URL';
-const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY';
+const SUPABASE_ANON_KEY = 'YOUR_ANON_PUBLIC_KEY';
 const SUPABASE_UPLOAD_EMAIL = 'upload-user@example.com';
+const SUPABASE_ADMIN_EMAIL = 'admin@email.com';
 ```
 
-### 7) Run site
-Open `index.html` (or deploy static hosting).
+## How to use
+- Side A: enter code and download.
+- Side B upload login: leave first field empty and enter upload user password in second field.
+- Side B admin login: type `admin` in first field. A new admin password field appears. Enter admin password and log in to view logs.
 
----
-
-## Change upload password
-Supabase -> Authentication -> Users -> choose upload user -> reset password.
-
-No code change needed unless upload email changes.
+## Notes
+- Upload max size is 50 MB.
+- New codes are 3 digits.
+- Legacy 6-digit code input is still accepted.

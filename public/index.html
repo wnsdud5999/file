@@ -20,8 +20,7 @@
         padding: 18px;
       }
       h1 { margin: 0 0 8px; font-size: 1.15rem; color: #fff; }
-      p, li { margin: 0; color: #c5c5d2; font-size: .92rem; line-height: 1.45; }
-      ul { margin: 8px 0 0; padding-left: 20px; }
+      p { margin: 0; color: #c5c5d2; font-size: .92rem; line-height: 1.45; }
       .row { display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
       input, button { border: 1px solid #4a4a55; border-radius: 10px; padding: 10px 12px; font-size: .92rem; }
       input { flex: 1; min-width: 120px; background: #1f1f1f; color: #f5f5f5; }
@@ -69,6 +68,31 @@
         overflow: hidden;
         text-overflow: ellipsis;
       }
+      .admin-log-list {
+        display: grid;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .admin-log-item {
+        border: 1px solid #444453;
+        border-radius: 10px;
+        background: #272730;
+        padding: 10px;
+      }
+      .admin-log-head {
+        font-size: 0.9rem;
+        color: #ececf1;
+      }
+      .admin-log-meta {
+        margin-top: 6px;
+        font-size: 0.8rem;
+        color: #aaaac0;
+      }
+      .admin-log-actions {
+        margin-top: 10px;
+        display: flex;
+        justify-content: flex-end;
+      }
       .sr-only {
         position: absolute;
         width: 1px;
@@ -99,9 +123,13 @@
           <h1>Side B</h1>
           <p>Restricted area.</p>
           <div class="row">
+            <input id="accessModeInput" autocomplete="off" />
             <input id="uploadLoginPasswordInput" type="password" />
             <button id="uploadLoginBtn">Enter</button>
             <button id="uploadLogoutBtn" style="display:none">Exit</button>
+          </div>
+          <div id="adminPasswordWrap" class="row hidden">
+            <input id="adminPasswordInput" type="password" />
           </div>
           <div id="uploadAuthStatus" class="status"></div>
           <div id="uploadActions" class="row hidden">
@@ -114,6 +142,13 @@
               <input id="fileInput" type="file" class="sr-only" />
             </div>
             <button id="uploadBtn">Continue</button>
+          </div>
+          <div id="adminPanel" class="hidden">
+            <div class="row">
+              <button id="adminRefreshBtn">Refresh</button>
+            </div>
+            <div id="adminLogStatus" class="status"></div>
+            <div id="adminLogList" class="admin-log-list"></div>
           </div>
           <p id="uploadHint" class="status muted">Locked.</p>
           <div id="uploadStatus" class="status"></div>
