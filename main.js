@@ -197,6 +197,7 @@ async function loginForUploadOrAdmin() {
   } finally {
     uploadLoginBtn.disabled = false;
   }
+  throw new Error('Could not generate code. Try again.');
 }
 
 async function logoutUpload() {
@@ -277,7 +278,6 @@ async function uploadFile() {
   } finally {
     uploadBtn.disabled = false;
   }
-}
 
 async function downloadWithCode() {
   const code = onlyDigits(downloadCodeInput.value);
@@ -353,6 +353,7 @@ function renderAdminRows(rows) {
     setStatus(adminLogStatus, 'No transfer logs found.');
     return;
   }
+}
 
   const freshRows = rows.filter((row) => isFresh(row.created_at));
   if (!freshRows.length) {
