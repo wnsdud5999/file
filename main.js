@@ -1,371 +1,501 @@
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js';
-import {
-  getAuth,
-  signInWithEmailAndPassword,
-  signOut,
-  onAuthStateChanged
-} from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js';
-import {
-  getFirestore,
-  collection,
-  addDoc,
-  deleteDoc,
-  doc,
-  getDoc,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  setDoc,
-  updateDoc
-} from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-// 1) Paste your Firebase Web app config here.
-const firebaseConfig = {
-  apiKey: "AIzaSyDbRIKSvB5OVK9Td8AklSLmayGwh9Geys0",
-  authDomain: "note-2a6f8.firebaseapp.com",
-  projectId: "note-2a6f8",
-  storageBucket: "note-2a6f8.firebasestorage.app",
-  messagingSenderId: "556359673920",
-  appId: "1:556359673920:web:0e56743418cb667d6797a5",
-};
+// ====== CHANGE THESE 4 VALUES ======
+const SUPABASE_URL = 'https://pnyimurfileqbesoasdl.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBueWltdXJmaWxlcWJlc29hc2RsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0NDczMzAsImV4cCI6MjA5MTAyMzMzMH0.HCj5kpgu0D5b4-b02OkejdJrLdo4XX-ZrfzJ8ceW7UY';
+const SUPABASE_UPLOAD_EMAIL = 'upload-user@example.com';
+const SUPABASE_ADMIN_EMAIL = 'admin@email.com';
+// ===================================
 
-// 2) Shared login email. Users type only password in UI.
-const SHARED_EMAIL = 'sharedemail@email.com';
+const BUCKET = 'private-send-files';
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
+const RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const CODE_LENGTH = 3;
+const LEGACY_CODE_LENGTH = 6;
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-
-const loginCard = document.getElementById('loginCard');
-const appCard = document.getElementById('appCard');
-const passwordInput = document.getElementById('passwordInput');
-const loginBtn = document.getElementById('loginBtn');
-const loginStatus = document.getElementById('loginStatus');
-
-const noteList = document.getElementById('noteList');
-const noteTitleInput = document.getElementById('noteTitleInput');
-const editor = document.getElementById('editor');
-const authorInput = document.getElementById('authorInput');
-const messageInput = document.getElementById('messageInput');
-const commitBtn = document.getElementById('commitBtn');
-const deleteNoteBtn = document.getElementById('deleteNoteBtn');
-const logoutBtn = document.getElementById('logoutBtn');
-const appStatus = document.getElementById('appStatus');
-const commitList = document.getElementById('commitList');
-const newNoteBtn = document.getElementById('newNoteBtn');
-
-let notes = [];
-let selectedNoteId = null;
-let unsubNotes = null;
-let unsubCommits = null;
-
-function setStatus(text, isError = false) {
-  appStatus.textContent = text;
-  appStatus.style.color = isError ? '#f97066' : '#98a2b3';
-}
-
-function showApp() {
-  loginCard.classList.add('hidden');
-  appCard.classList.remove('hidden');
-}
-
-function showLogin() {
-  appCard.classList.add('hidden');
-  loginCard.classList.remove('hidden');
-}
-
-function clearRealtime() {
-  if (unsubNotes) {
-    unsubNotes();
-    unsubNotes = null;
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabasePublic = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false
   }
-  if (unsubCommits) {
-    unsubCommits();
-    unsubCommits = null;
-  }
+});
+
+const downloadCodeInput = document.getElementById('downloadCodeInput');
+const downloadBtn = document.getElementById('downloadBtn');
+const downloadStatus = document.getElementById('downloadStatus');
+
+const accessModeInput = document.getElementById('accessModeInput');
+const uploadLoginPasswordInput = document.getElementById('uploadLoginPasswordInput');
+const adminPasswordWrap = document.getElementById('adminPasswordWrap');
+const adminPasswordInput = document.getElementById('adminPasswordInput');
+const uploadLoginBtn = document.getElementById('uploadLoginBtn');
+const uploadLogoutBtn = document.getElementById('uploadLogoutBtn');
+const uploadAuthStatus = document.getElementById('uploadAuthStatus');
+
+const fileInput = document.getElementById('fileInput');
+const dropZone = document.getElementById('dropZone');
+const selectedFileName = document.getElementById('selectedFileName');
+const uploadBtn = document.getElementById('uploadBtn');
+const uploadActions = document.getElementById('uploadActions');
+const uploadHint = document.getElementById('uploadHint');
+const uploadStatus = document.getElementById('uploadStatus');
+const generatedCode = document.getElementById('generatedCode');
+
+const adminPanel = document.getElementById('adminPanel');
+const adminRefreshBtn = document.getElementById('adminRefreshBtn');
+const adminLogStatus = document.getElementById('adminLogStatus');
+const adminLogList = document.getElementById('adminLogList');
+
+let uploadUser = null;
+let adminUser = null;
+let selectedUploadFile = null;
+
+function setStatus(target, message, error = false) {
+  if (!target) return;
+  target.textContent = message;
+  target.style.color = error ? '#ff6b6b' : '#b8b8c5';
 }
 
-function renderNotes() {
-  noteList.innerHTML = '';
-
-  notes.forEach((note) => {
-    const li = document.createElement('li');
-    li.className = note.id === selectedNoteId ? 'active' : '';
-
-    const updatedAtText = note.updatedAt
-      ? new Date(note.updatedAt).toLocaleString()
-      : 'just now';
-
-    const titleWrap = document.createElement('div');
-    titleWrap.innerHTML = `<strong>${note.title || 'Untitled note'}</strong><small>${updatedAtText}</small>`;
-
-    li.appendChild(titleWrap);
-    li.addEventListener('click', () => {
-      selectNote(note.id);
-    });
-
-    noteList.appendChild(li);
-  });
+function updateSelectedFileName(file) {
+  if (!selectedFileName) return;
+  selectedFileName.textContent = file ? cleanFileName(file.name) : 'No file selected';
 }
 
-function renderCommits(items = []) {
-  commitList.innerHTML = '';
-
-  items.forEach((item) => {
-    const li = document.createElement('li');
-    const ts = item.ts ? new Date(item.ts).toLocaleString() : 'just now';
-    li.textContent = `[${ts}] ${item.author || 'anonymous'}: ${item.message || 'Updated note'}`;
-    commitList.appendChild(li);
-  });
+function onlyDigits(value) {
+  return String(value || '').replace(/\D/g, '').slice(0, LEGACY_CODE_LENGTH);
 }
 
-function getSelectedNote() {
-  return notes.find((n) => n.id === selectedNoteId) || null;
+function randomCode() {
+  return String(Math.floor(Math.random() * 1_000)).padStart(CODE_LENGTH, '0');
 }
 
-function clearEditorPanels() {
-  noteTitleInput.value = '';
-  editor.value = '';
-  renderCommits([]);
+function cleanFileName(name) {
+  return String(name || 'file.bin').replace(/[^a-zA-Z0-9._\- ()]/g, '_');
 }
 
-function selectNote(noteId) {
-  selectedNoteId = noteId;
-  const selected = getSelectedNote();
-
-  noteTitleInput.value = selected?.title || '';
-  editor.value = selected?.content || '';
-
-  renderNotes();
-  startCommitListener();
+function isAdminMode() {
+  return String(accessModeInput?.value || '').trim().toLowerCase() === 'admin';
 }
 
-async function ensureInitialData() {
-  const noteRef = doc(db, 'notes', 'welcome');
-  const existing = await getDoc(noteRef);
+function isFresh(createdAt) {
+  const age = Date.now() - new Date(createdAt).getTime();
+  return Number.isFinite(age) && age <= RETENTION_MS;
+}
 
-  if (!existing.exists()) {
-    await setDoc(noteRef, {
-      title: 'Welcome note',
-      content: 'Welcome!\n\nCreate notes, edit title/content, and commit changes.',
-      updatedAt: serverTimestamp(),
-      updatedBy: 'system'
-    });
+function triggerDownload(blobLike, filename, contentType) {
+  const blob = new Blob([blobLike], { type: contentType || 'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
 
-    await addDoc(collection(db, 'notes', 'welcome', 'commits'), {
-      author: 'system',
-      message: 'Initial note created',
-      ts: serverTimestamp()
-    });
+function setAdminModeUI() {
+  const showAdminPassword = isAdminMode() && !adminUser;
+  if (adminPasswordWrap) {
+    adminPasswordWrap.classList.toggle('hidden', !showAdminPassword);
   }
 }
 
-async function createNote() {
-  const rawTitle = window.prompt('New note title:', 'New note');
-  if (!rawTitle) return;
+function refreshUploadAuthUI() {
+  const loggedInUploader = Boolean(uploadUser);
+  const loggedInAdmin = Boolean(adminUser);
 
-  const title = rawTitle.trim() || 'Untitled note';
-  const author = authorInput.value.trim() || 'anonymous';
-  const noteRef = doc(collection(db, 'notes'));
+  uploadBtn.disabled = !loggedInUploader;
+  fileInput.disabled = !loggedInUploader;
 
-  await setDoc(noteRef, {
-    title,
-    content: '',
-    updatedAt: serverTimestamp(),
-    updatedBy: author
-  });
+  uploadLogoutBtn.style.display = loggedInUploader || loggedInAdmin ? 'inline-block' : 'none';
+  uploadActions.classList.toggle('hidden', !loggedInUploader);
+  uploadHint.style.display = loggedInUploader || loggedInAdmin ? 'none' : 'block';
+  adminPanel.classList.toggle('hidden', !loggedInAdmin);
 
-  await addDoc(collection(db, 'notes', noteRef.id, 'commits'), {
-    author,
-    message: `Created note "${title}"`,
-    ts: serverTimestamp()
-  });
+  if (loggedInUploader) {
+    setStatus(uploadAuthStatus, `Access active: ${uploadUser.email}`);
+  } else if (loggedInAdmin) {
+    setStatus(uploadAuthStatus, `Admin active: ${adminUser.email}`);
+  } else {
+    setStatus(uploadAuthStatus, 'Access required.');
+  }
 
-  setStatus('New note created.');
-  selectedNoteId = noteRef.id;
+  setAdminModeUI();
 }
 
-async function commitCurrentNote() {
-  if (!selectedNoteId) {
-    setStatus('Select a note first.', true);
+async function createUniqueCode() {
+  for (let i = 0; i < 20; i += 1) {
+    const code = randomCode();
+    const { data, error } = await supabase
+      .from('transfers')
+      .select('code')
+      .eq('code', code)
+      .limit(1);
+
+    if (error) throw error;
+    if (!data.length) return code;
+  }
+  throw new Error('Could not generate code. Try again.');
+}
+
+async function loginForUploadOrAdmin() {
+  if (SUPABASE_URL.includes('REPLACE_') || SUPABASE_ANON_KEY.includes('REPLACE_')) {
+    setStatus(uploadAuthStatus, 'Please set SUPABASE_URL + SUPABASE_ANON_KEY in main.js.', true);
     return;
   }
 
-  commitBtn.disabled = true;
-  setStatus('Committing note...');
+  uploadLoginBtn.disabled = true;
 
   try {
-    const author = authorInput.value.trim() || 'anonymous';
-    const message = messageInput.value.trim() || 'Updated note';
-
-    await updateDoc(doc(db, 'notes', selectedNoteId), {
-      title: noteTitleInput.value.trim() || 'Untitled note',
-      content: editor.value,
-      updatedAt: serverTimestamp(),
-      updatedBy: author
-    });
-
-    await addDoc(collection(db, 'notes', selectedNoteId, 'commits'), {
-      author,
-      message,
-      ts: serverTimestamp()
-    });
-
-    messageInput.value = '';
-    setStatus('Committed! Everyone will see this note update.');
-  } catch (err) {
-    setStatus(err.message, true);
-  } finally {
-    commitBtn.disabled = false;
-  }
-}
-
-async function deleteCurrentNote() {
-  if (!selectedNoteId) {
-    setStatus('Select a note first.', true);
-    return;
-  }
-
-  const selected = getSelectedNote();
-  const ok = window.confirm(`Delete note "${selected?.title || 'Untitled note'}"?`);
-  if (!ok) return;
-
-  await deleteDoc(doc(db, 'notes', selectedNoteId));
-  selectedNoteId = null;
-  clearEditorPanels();
-  setStatus('Note deleted.');
-}
-
-function startNotesListener() {
-  const notesQuery = query(collection(db, 'notes'), orderBy('updatedAt', 'desc'));
-
-  unsubNotes = onSnapshot(
-    notesQuery,
-    (snapshot) => {
-      notes = snapshot.docs.map((snap) => {
-        const data = snap.data();
-        return {
-          id: snap.id,
-          title: data.title || 'Untitled note',
-          content: data.content || '',
-          updatedAt: data.updatedAt?.toDate?.() ?? null,
-          updatedBy: data.updatedBy || null
-        };
-      });
-
-      if (!notes.length) {
-        selectedNoteId = null;
-        clearEditorPanels();
-        renderNotes();
+    const modeIsAdmin = isAdminMode();
+    if (modeIsAdmin) {
+      if (!adminPasswordInput.value) {
+        setAdminModeUI();
+        setStatus(uploadAuthStatus, 'Admin password needed.', true);
         return;
       }
 
-      if (!selectedNoteId || !notes.some((n) => n.id === selectedNoteId)) {
-        selectedNoteId = notes[0].id;
-      }
-
-      const selected = getSelectedNote();
-      noteTitleInput.value = selected?.title || '';
-      editor.value = selected?.content || '';
-
-      renderNotes();
-      startCommitListener();
-    },
-    (err) => {
-      setStatus(err.message, true);
-    }
-  );
-}
-
-function startCommitListener() {
-  if (unsubCommits) {
-    unsubCommits();
-    unsubCommits = null;
-  }
-
-  if (!selectedNoteId) {
-    renderCommits([]);
-    return;
-  }
-
-  const commitsQuery = query(
-    collection(db, 'notes', selectedNoteId, 'commits'),
-    orderBy('ts', 'desc')
-  );
-
-  unsubCommits = onSnapshot(
-    commitsQuery,
-    (snapshot) => {
-      const items = snapshot.docs.slice(0, 20).map((snap) => {
-        const data = snap.data();
-        return {
-          author: data.author || 'anonymous',
-          message: data.message || 'Updated note',
-          ts: data.ts?.toDate?.() ?? null
-        };
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: SUPABASE_ADMIN_EMAIL,
+        password: adminPasswordInput.value
       });
 
-      renderCommits(items);
-    },
-    (err) => {
-      setStatus(err.message, true);
+      if (error) throw error;
+      adminUser = data.user;
+      uploadUser = null;
+      adminPasswordInput.value = '';
+      uploadLoginPasswordInput.value = '';
+      refreshUploadAuthUI();
+      setStatus(uploadStatus, 'Admin access granted.');
+      await loadAdminLogs();
+      return;
     }
-  );
+
+    const password = uploadLoginPasswordInput.value;
+    if (!password) {
+      setStatus(uploadAuthStatus, 'Enter upload account password.', true);
+      return;
+    }
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: SUPABASE_UPLOAD_EMAIL,
+      password
+    });
+
+    if (error) throw error;
+    uploadUser = data.user;
+    adminUser = null;
+    uploadLoginPasswordInput.value = '';
+    adminPasswordInput.value = '';
+    refreshUploadAuthUI();
+    setStatus(uploadStatus, 'Access granted.');
+  } catch (error) {
+    setStatus(uploadAuthStatus, error.message || 'Login failed.', true);
+  } finally {
+    uploadLoginBtn.disabled = false;
+  }
 }
 
-loginBtn.addEventListener('click', async () => {
-  loginStatus.textContent = '';
+async function logoutUpload() {
+  await supabase.auth.signOut();
+  uploadUser = null;
+  adminUser = null;
+  selectedUploadFile = null;
+  fileInput.value = '';
+  updateSelectedFileName(null);
+  uploadLoginPasswordInput.value = '';
+  adminPasswordInput.value = '';
+  if (adminLogList) adminLogList.innerHTML = '';
+  setStatus(adminLogStatus, '');
+  refreshUploadAuthUI();
+  setStatus(uploadStatus, 'Access closed.');
+}
+
+async function uploadFile() {
+  const file = selectedUploadFile || (fileInput.files && fileInput.files[0]);
+
+  if (!uploadUser) {
+    setStatus(uploadStatus, 'Upload access required first.', true);
+    return;
+  }
+
+  if (!file) {
+    setStatus(uploadStatus, 'Select an item first.', true);
+    return;
+  }
+
+  if (file.size > MAX_UPLOAD_BYTES) {
+    setStatus(uploadStatus, 'Item too large (max 50 MB).', true);
+    return;
+  }
+
+  uploadBtn.disabled = true;
+  generatedCode.textContent = '';
+  setStatus(uploadStatus, 'Working...');
 
   try {
-    await signInWithEmailAndPassword(auth, SHARED_EMAIL, passwordInput.value);
-    passwordInput.value = '';
-  } catch (err) {
-    loginStatus.textContent = `Login failed: ${err.message}`;
-    loginStatus.style.color = '#f97066';
-  }
-});
+    const code = await createUniqueCode();
+    const objectPath = `${crypto.randomUUID()}-${cleanFileName(file.name)}`;
 
-newNoteBtn.addEventListener('click', async () => {
+    const { error: uploadError } = await supabase.storage
+      .from(BUCKET)
+      .upload(objectPath, file, { upsert: false });
+
+    if (uploadError) throw uploadError;
+
+    const { data: userInfo } = await supabase.auth.getUser();
+    if (!userInfo.user) {
+      await supabase.auth.signOut();
+      uploadUser = null;
+      refreshUploadAuthUI();
+      throw new Error('Session expired. Re-enter access.');
+    }
+
+    const { error: insertError } = await supabase.rpc('create_transfer', {
+      p_code: code,
+      p_object_path: objectPath,
+      p_original_name: cleanFileName(file.name),
+      p_content_type: file.type || 'application/octet-stream',
+      p_created_at: new Date().toISOString()
+    });
+
+    if (insertError) {
+      await supabase.storage.from(BUCKET).remove([objectPath]);
+      throw insertError;
+    }
+
+    setStatus(uploadStatus, 'Done. Use this value:');
+    generatedCode.textContent = code;
+    fileInput.value = '';
+    selectedUploadFile = null;
+    updateSelectedFileName(null);
+  } catch (error) {
+    setStatus(uploadStatus, error.message || 'Action failed', true);
+  } finally {
+    uploadBtn.disabled = false;
+  }
+}
+
+async function downloadWithCode() {
+  const code = onlyDigits(downloadCodeInput.value);
+  downloadCodeInput.value = code;
+
+  if (SUPABASE_URL.includes('REPLACE_') || SUPABASE_ANON_KEY.includes('REPLACE_')) {
+    setStatus(downloadStatus, 'Please set SUPABASE_URL + SUPABASE_ANON_KEY in main.js.', true);
+    return;
+  }
+
+  if (code.length !== CODE_LENGTH && code.length !== LEGACY_CODE_LENGTH) {
+    setStatus(downloadStatus, `Value must be ${CODE_LENGTH} or ${LEGACY_CODE_LENGTH} digits.`, true);
+    return;
+  }
+
+  downloadBtn.disabled = true;
+  setStatus(downloadStatus, 'Checking...');
+
   try {
-    await createNote();
-  } catch (err) {
-    setStatus(err.message, true);
+    const { data: consumed, error: consumeError } = await supabasePublic.rpc('consume_transfer', {
+      p_code: code
+    });
+
+    if (consumeError) throw consumeError;
+    const transfer = Array.isArray(consumed) ? consumed[0] : consumed;
+
+    if (!transfer) {
+      throw new Error('Value not found or already used.');
+    }
+
+    if (!isFresh(transfer.created_at)) {
+      await supabasePublic.storage.from(BUCKET).remove([transfer.object_path]);
+      await supabasePublic.from('transfers').delete().eq('object_path', transfer.object_path);
+      throw new Error('Value expired.');
+    }
+
+    const { data: fileData, error: downloadError } = await supabasePublic.storage
+      .from(BUCKET)
+      .download(transfer.object_path);
+
+    if (downloadError) throw downloadError;
+
+    triggerDownload(fileData, transfer.original_name || `download-${code}`, transfer.content_type);
+
+    setStatus(downloadStatus, 'Completed. Value is now invalid.');
+    downloadCodeInput.value = '';
+  } catch (error) {
+    setStatus(downloadStatus, error.message || 'Action failed', true);
+  } finally {
+    downloadBtn.disabled = false;
   }
-});
+}
 
-commitBtn.addEventListener('click', commitCurrentNote);
-deleteNoteBtn.addEventListener('click', async () => {
-  try {
-    await deleteCurrentNote();
-  } catch (err) {
-    setStatus(err.message, true);
-  }
-});
-
-logoutBtn.addEventListener('click', async () => {
-  await signOut(auth);
-});
-
-onAuthStateChanged(auth, async (user) => {
-  if (!user) {
-    clearRealtime();
-    showLogin();
+async function adminDownload(objectPath, originalName, contentType) {
+  if (!adminUser) {
+    setStatus(adminLogStatus, 'Admin access required.', true);
     return;
   }
 
   try {
-    await ensureInitialData();
+    const { data, error } = await supabase.storage.from(BUCKET).download(objectPath);
+    if (error) throw error;
+    triggerDownload(data, originalName || 'file.bin', contentType);
+  } catch (error) {
+    setStatus(adminLogStatus, error.message || 'Admin download failed.', true);
+  }
+}
 
-    if (!unsubNotes) {
-      startNotesListener();
+function renderAdminRows(rows) {
+  adminLogList.innerHTML = '';
+
+  if (!rows.length) {
+    setStatus(adminLogStatus, 'No transfer logs found.');
+    return;
+  }
+
+  const freshRows = rows.filter((row) => isFresh(row.created_at));
+  if (!freshRows.length) {
+    setStatus(adminLogStatus, 'No logs in last 7 days.');
+    return;
+  }
+
+  setStatus(adminLogStatus, `Showing ${freshRows.length} item(s), last 7 days.`);
+
+  freshRows.forEach((row) => {
+    const entry = document.createElement('div');
+    entry.className = 'admin-log-item';
+
+    const top = document.createElement('div');
+    top.className = 'admin-log-head';
+    const codeState = row.code_used_at ? 'used' : 'active';
+    top.textContent = `${row.original_name} · ${codeState}`;
+
+    const meta = document.createElement('div');
+    meta.className = 'admin-log-meta';
+    meta.textContent = `Created: ${new Date(row.created_at).toLocaleString()}`;
+
+    const rowActions = document.createElement('div');
+    rowActions.className = 'admin-log-actions';
+    const dlBtn = document.createElement('button');
+    dlBtn.type = 'button';
+    dlBtn.textContent = 'Download';
+    dlBtn.addEventListener('click', () => {
+      adminDownload(row.object_path, row.original_name, row.content_type);
+    });
+
+    rowActions.appendChild(dlBtn);
+
+    entry.appendChild(top);
+    entry.appendChild(meta);
+    entry.appendChild(rowActions);
+    adminLogList.appendChild(entry);
+  });
+}
+
+async function loadAdminLogs() {
+  if (!adminUser) return;
+
+  adminRefreshBtn.disabled = true;
+  setStatus(adminLogStatus, 'Loading...');
+
+  try {
+    const { data: rows, error } = await supabase
+      .from('transfers')
+      .select('code, object_path, original_name, content_type, created_at, code_used_at')
+      .order('created_at', { ascending: false })
+      .limit(200);
+
+    if (error) throw error;
+
+    const expiredRows = rows.filter((row) => !isFresh(row.created_at));
+    for (const row of expiredRows) {
+      await supabase.storage.from(BUCKET).remove([row.object_path]);
+      await supabase.from('transfers').delete().eq('object_path', row.object_path);
     }
 
-    showApp();
-    setStatus('Connected.');
-  } catch (err) {
-    showLogin();
-    loginStatus.textContent = `Setup error: ${err.message}`;
-    loginStatus.style.color = '#f97066';
+    const activeRows = rows.filter((row) => isFresh(row.created_at));
+    renderAdminRows(activeRows);
+  } catch (error) {
+    setStatus(adminLogStatus, error.message || 'Could not load admin logs.', true);
+  } finally {
+    adminRefreshBtn.disabled = false;
   }
+}
+
+downloadCodeInput.addEventListener('input', () => {
+  downloadCodeInput.value = onlyDigits(downloadCodeInput.value);
 });
+
+accessModeInput.addEventListener('input', () => {
+  if (!isAdminMode()) {
+    adminPasswordInput.value = '';
+  }
+  setAdminModeUI();
+});
+
+uploadLoginBtn.addEventListener('click', loginForUploadOrAdmin);
+uploadLogoutBtn.addEventListener('click', logoutUpload);
+downloadBtn.addEventListener('click', downloadWithCode);
+uploadBtn.addEventListener('click', uploadFile);
+adminRefreshBtn.addEventListener('click', loadAdminLogs);
+
+fileInput.addEventListener('change', () => {
+  selectedUploadFile = fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+  updateSelectedFileName(selectedUploadFile);
+});
+
+function bindDropZone() {
+  if (!dropZone) return;
+
+  const prevent = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach((eventName) => {
+    dropZone.addEventListener(eventName, prevent);
+  });
+
+  ['dragenter', 'dragover'].forEach((eventName) => {
+    dropZone.addEventListener(eventName, () => {
+      dropZone.style.borderColor = '#9a9aaa';
+      dropZone.style.background = '#2a2a30';
+    });
+  });
+
+  ['dragleave', 'drop'].forEach((eventName) => {
+    dropZone.addEventListener(eventName, () => {
+      dropZone.style.borderColor = '#62626d';
+      dropZone.style.background = 'transparent';
+    });
+  });
+
+  dropZone.addEventListener('drop', (event) => {
+    if (!uploadUser) return;
+    const droppedFile = event.dataTransfer?.files?.[0] || null;
+    if (!droppedFile) return;
+    selectedUploadFile = droppedFile;
+    updateSelectedFileName(droppedFile);
+    setStatus(uploadStatus, 'Item selected.');
+  });
+}
+
+(async () => {
+  const { data } = await supabase.auth.getSession();
+  const user = data.session?.user || null;
+
+  if (user && user.email === SUPABASE_UPLOAD_EMAIL) {
+    uploadUser = user;
+  } else if (user && user.email === SUPABASE_ADMIN_EMAIL) {
+    adminUser = user;
+  }
+
+  refreshUploadAuthUI();
+  updateSelectedFileName(null);
+  bindDropZone();
+
+  if (adminUser) {
+    await loadAdminLogs();
+  }
+})();

@@ -1,81 +1,212 @@
-# Shared Firebase Notes (GitHub Pages compatible)
+# Private Send (Supabase only)
 
-This website is static (works on GitHub Pages) and uses Firebase for:
-- password login,
-- multiple notes (create/edit title/content/delete),
-- per-note commit history,
-- realtime updates.
+This app is fully client-side and uses only Supabase.
 
-No backend server is needed.
+## What changed
+- Normal user gets a short code and downloader can use it **one time only**.
+- After first download, that code cannot be reused.
+- File is kept for up to **7 days** for admin log access.
+- Admin can view transfer logs and download files within 7 days.
 
----
+## Accounts you need in Supabase Auth
+Create these users in **Authentication -> Users**:
+- Upload user email (example): `upload-user@example.com`
+- Admin user email: `admin@email.com`
 
-## Easy setup (step by step)
+## Storage setup
+Create private bucket:
+- Name: `private-send-files`
+- Visibility: private
 
-## 1) In Firebase: create project + web app
+## SQL setup (run all at once)
+Open SQL Editor and run this whole script:
 
-1. Open Firebase Console and create a project.
-2. Add a **Web app**.
-3. Copy the web config values (`apiKey`, `authDomain`, `projectId`, `storageBucket`, `messagingSenderId`, `appId`).
+```sql
+create table if not exists public.transfers (
+  code text primary key,
+  object_path text not null unique,
+  original_name text not null,
+  content_type text,
+  created_at timestamptz not null default now(),
+  code_used_at timestamptz
+);
 
-## 2) In Firebase: enable login and create shared user
+alter table public.transfers enable row level security;
 
-1. Open **Authentication → Sign-in method** and enable **Email/Password**.
-2. Open **Authentication → Users** and create one user:
-   - Email: `sharedemail@email.com` (or your own)
-   - Password: `wnsdud5999@` (or your own)
+-- rerun-safe policy cleanup
+-- table policies
+ drop policy if exists "anon can read active transfers" on public.transfers;
+ drop policy if exists "anon can delete expired transfers" on public.transfers;
+ drop policy if exists "admin can view logs" on public.transfers;
+ drop policy if exists "admin can delete logs" on public.transfers;
 
-## 3) In Firebase: create Firestore database
+-- storage policies
+ drop policy if exists "authenticated can upload files" on storage.objects;
+ drop policy if exists "anon can read files" on storage.objects;
+ drop policy if exists "anon can delete expired files" on storage.objects;
+ drop policy if exists "admin can read files" on storage.objects;
+ drop policy if exists "admin can delete files" on storage.objects;
 
-1. Open **Firestore Database** and create database in production mode.
-2. Open **Rules** and paste this:
+-- active code lookup only (code not consumed + not older than 7 days)
+create policy "anon can read active transfers"
+on public.transfers for select
+to anon using (
+  code_used_at is null
+  and created_at > now() - interval '7 days'
+);
 
-```txt
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /notes/{noteId} {
-      allow read, write: if request.auth != null;
+-- allow anon cleanup for expired rows only
+create policy "anon can delete expired transfers"
+on public.transfers for delete
+to anon using (
+  created_at <= now() - interval '7 days'
+);
 
-      match /commits/{commitId} {
-        allow read, write: if request.auth != null;
-      }
-    }
-  }
-}
+-- admin can view/delete all transfer logs
+create policy "admin can view logs"
+on public.transfers for select
+to authenticated using (
+  auth.jwt() ->> 'email' = 'admin@email.com'
+);
+
+create policy "admin can delete logs"
+on public.transfers for delete
+to authenticated using (
+  auth.jwt() ->> 'email' = 'admin@email.com'
+);
+
+-- upload account can upload objects
+create policy "authenticated can upload files"
+on storage.objects for insert
+to authenticated with check (
+  bucket_id = 'private-send-files'
+);
+
+-- anon can read from bucket (download side)
+create policy "anon can read files"
+on storage.objects for select
+to anon using (
+  bucket_id = 'private-send-files'
+);
+
+-- anon can delete only expired files from bucket
+create policy "anon can delete expired files"
+on storage.objects for delete
+to anon using (
+  bucket_id = 'private-send-files'
+  and created_at <= now() - interval '7 days'
+);
+
+-- admin can read/delete any file in bucket
+create policy "admin can read files"
+on storage.objects for select
+to authenticated using (
+  bucket_id = 'private-send-files'
+  and auth.jwt() ->> 'email' = 'admin@email.com'
+);
+
+create policy "admin can delete files"
+on storage.objects for delete
+to authenticated using (
+  bucket_id = 'private-send-files'
+  and auth.jwt() ->> 'email' = 'admin@email.com'
+);
+
+-- upload record creation (authenticated uploader)
+create or replace function public.create_transfer(
+  p_code text,
+  p_object_path text,
+  p_original_name text,
+  p_content_type text,
+  p_created_at timestamptz
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.role() <> 'authenticated' then
+    raise exception 'not authenticated';
+  end if;
+
+  insert into public.transfers (
+    code,
+    object_path,
+    original_name,
+    content_type,
+    created_at,
+    code_used_at
+  )
+  values (
+    p_code,
+    p_object_path,
+    p_original_name,
+    p_content_type,
+    p_created_at,
+    null
+  );
+end;
+$$;
+
+grant execute on function public.create_transfer(text, text, text, text, timestamptz) to authenticated;
+
+-- one-time consume code for downloader (anon)
+create or replace function public.consume_transfer(p_code text)
+returns table (
+  code text,
+  object_path text,
+  original_name text,
+  content_type text,
+  created_at timestamptz,
+  code_used_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  found_row public.transfers%rowtype;
+begin
+  update public.transfers
+  set code_used_at = now()
+  where transfers.code = p_code
+    and transfers.code_used_at is null
+    and transfers.created_at > now() - interval '7 days'
+  returning * into found_row;
+
+  if found_row is null then
+    return;
+  end if;
+
+  code := found_row.code;
+  object_path := found_row.object_path;
+  original_name := found_row.original_name;
+  content_type := found_row.content_type;
+  created_at := found_row.created_at;
+  code_used_at := found_row.code_used_at;
+  return next;
+end;
+$$;
+
+grant execute on function public.consume_transfer(text) to anon;
 ```
 
-## 4) Edit `main.js`
+## App config in `main.js`
 
-Replace these values:
-- all `REPLACE_ME` entries in `firebaseConfig`
-- `SHARED_EMAIL`
+```js
+const SUPABASE_URL = 'YOUR_PROJECT_URL';
+const SUPABASE_ANON_KEY = 'YOUR_ANON_PUBLIC_KEY';
+const SUPABASE_UPLOAD_EMAIL = 'upload-user@example.com';
+const SUPABASE_ADMIN_EMAIL = 'admin@email.com';
+```
 
-Important:
-- The entered password on the site must match the shared Firebase user password.
+## How to use
+- Side A: enter code and download.
+- Side B upload login: leave first field empty and enter upload user password in second field.
+- Side B admin login: type `admin` in first field. A new admin password field appears. Enter admin password and log in to view logs.
 
-## 5) Deploy on GitHub Pages
-
-1. Push this repo to GitHub.
-2. Open **Settings → Pages**.
-3. Deploy from branch root.
-4. Open your Pages URL.
-
----
-
-## What to do on the website
-
-- Enter shared password.
-- Click **+ New note** to create notes.
-- Edit note title + text.
-- Click **Commit changes**.
-- See recent commits for the selected note.
-- Click **Delete note** if needed.
-
----
-
-## Troubleshooting
-
-- **Login failed (`auth/api-key-not-valid`)**: your `firebaseConfig` still has wrong or placeholder values.
-- **Login failed (`auth/invalid-credential`)**: `SHARED_EMAIL`, password, or project is mismatched.
-- **No notes visible / write errors**: Firestore rules were not applied.
+## Notes
+- Upload max size is 50 MB.
+- New codes are 3 digits.
+- Legacy 6-digit code input is still accepted.
