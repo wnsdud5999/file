@@ -21,6 +21,8 @@ Create private bucket:
 ## SQL setup (run all at once)
 Open SQL Editor and run this whole script:
 
+If you get `column "code_used_at" does not exist`, your table is from an older version. The script below now repairs old tables first.
+
 ```sql
 create table if not exists public.transfers (
   code text primary key,
@@ -30,6 +32,21 @@ create table if not exists public.transfers (
   created_at timestamptz not null default now(),
   code_used_at timestamptz
 );
+
+-- important: if transfers table already existed from old setup,
+-- add missing columns/constraints so new policies/functions work.
+alter table public.transfers
+  add column if not exists object_path text,
+  add column if not exists original_name text,
+  add column if not exists content_type text,
+  add column if not exists created_at timestamptz default now(),
+  add column if not exists code_used_at timestamptz;
+
+alter table public.transfers alter column object_path set not null;
+alter table public.transfers alter column original_name set not null;
+alter table public.transfers alter column created_at set not null;
+
+create unique index if not exists transfers_object_path_key on public.transfers (object_path);
 
 alter table public.transfers enable row level security;
 
@@ -203,8 +220,8 @@ const SUPABASE_ADMIN_EMAIL = 'admin@email.com';
 
 ## How to use
 - Side A: enter code and download.
-- Side B upload login: leave first field empty and enter upload user password in second field.
-- Side B admin login: type `admin` in first field. A new admin password field appears. Enter admin password and log in to view logs.
+- Side B upload login: enter upload user password in the single input and press Enter.
+- Side B admin login: type `admin` and press Enter once, then type admin password in the same input and press Enter again.
 
 ## Notes
 - Upload max size is 50 MB.

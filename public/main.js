@@ -26,10 +26,7 @@ const downloadCodeInput = document.getElementById('downloadCodeInput');
 const downloadBtn = document.getElementById('downloadBtn');
 const downloadStatus = document.getElementById('downloadStatus');
 
-const accessModeInput = document.getElementById('accessModeInput');
 const uploadLoginPasswordInput = document.getElementById('uploadLoginPasswordInput');
-const adminPasswordWrap = document.getElementById('adminPasswordWrap');
-const adminPasswordInput = document.getElementById('adminPasswordInput');
 const uploadLoginBtn = document.getElementById('uploadLoginBtn');
 const uploadLogoutBtn = document.getElementById('uploadLogoutBtn');
 const uploadAuthStatus = document.getElementById('uploadAuthStatus');
@@ -51,6 +48,7 @@ const adminLogList = document.getElementById('adminLogList');
 let uploadUser = null;
 let adminUser = null;
 let selectedUploadFile = null;
+let awaitingAdminPassword = false;
 
 function setStatus(target, message, error = false) {
   if (!target) return;
@@ -75,10 +73,6 @@ function cleanFileName(name) {
   return String(name || 'file.bin').replace(/[^a-zA-Z0-9._\- ()]/g, '_');
 }
 
-function isAdminMode() {
-  return String(accessModeInput?.value || '').trim().toLowerCase() === 'admin';
-}
-
 function isFresh(createdAt) {
   const age = Date.now() - new Date(createdAt).getTime();
   return Number.isFinite(age) && age <= RETENTION_MS;
@@ -94,13 +88,6 @@ function triggerDownload(blobLike, filename, contentType) {
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(url);
-}
-
-function setAdminModeUI() {
-  const showAdminPassword = isAdminMode() && !adminUser;
-  if (adminPasswordWrap) {
-    adminPasswordWrap.classList.toggle('hidden', !showAdminPassword);
-  }
 }
 
 function refreshUploadAuthUI() {
@@ -123,7 +110,6 @@ function refreshUploadAuthUI() {
     setStatus(uploadAuthStatus, 'Access required.');
   }
 
-  setAdminModeUI();
 }
 
 async function createUniqueCode() {
@@ -150,31 +136,37 @@ async function loginForUploadOrAdmin() {
   uploadLoginBtn.disabled = true;
 
   try {
-    const modeIsAdmin = isAdminMode();
-    if (modeIsAdmin) {
-      if (!adminPasswordInput.value) {
-        setAdminModeUI();
+    const authValue = String(uploadLoginPasswordInput.value || '');
+
+    if (awaitingAdminPassword) {
+      if (!authValue) {
         setStatus(uploadAuthStatus, 'Admin password needed.', true);
         return;
       }
-
       const { data, error } = await supabase.auth.signInWithPassword({
         email: SUPABASE_ADMIN_EMAIL,
-        password: adminPasswordInput.value
+        password: authValue
       });
 
       if (error) throw error;
       adminUser = data.user;
       uploadUser = null;
-      adminPasswordInput.value = '';
       uploadLoginPasswordInput.value = '';
+      awaitingAdminPassword = false;
       refreshUploadAuthUI();
       setStatus(uploadStatus, 'Admin access granted.');
       await loadAdminLogs();
       return;
     }
 
-    const password = uploadLoginPasswordInput.value;
+    if (authValue.trim().toLowerCase() === 'admin') {
+      awaitingAdminPassword = true;
+      uploadLoginPasswordInput.value = '';
+      setStatus(uploadAuthStatus, 'Admin mode. Enter admin password, then press Enter again.');
+      return;
+    }
+
+    const password = authValue;
     if (!password) {
       setStatus(uploadAuthStatus, 'Enter upload account password.', true);
       return;
@@ -189,7 +181,7 @@ async function loginForUploadOrAdmin() {
     uploadUser = data.user;
     adminUser = null;
     uploadLoginPasswordInput.value = '';
-    adminPasswordInput.value = '';
+    awaitingAdminPassword = false;
     refreshUploadAuthUI();
     setStatus(uploadStatus, 'Access granted.');
   } catch (error) {
@@ -204,10 +196,10 @@ async function logoutUpload() {
   uploadUser = null;
   adminUser = null;
   selectedUploadFile = null;
+  awaitingAdminPassword = false;
   fileInput.value = '';
   updateSelectedFileName(null);
   uploadLoginPasswordInput.value = '';
-  adminPasswordInput.value = '';
   if (adminLogList) adminLogList.innerHTML = '';
   setStatus(adminLogStatus, '');
   refreshUploadAuthUI();
@@ -425,13 +417,6 @@ async function loadAdminLogs() {
 
 downloadCodeInput.addEventListener('input', () => {
   downloadCodeInput.value = onlyDigits(downloadCodeInput.value);
-});
-
-accessModeInput.addEventListener('input', () => {
-  if (!isAdminMode()) {
-    adminPasswordInput.value = '';
-  }
-  setAdminModeUI();
 });
 
 uploadLoginBtn.addEventListener('click', loginForUploadOrAdmin);
