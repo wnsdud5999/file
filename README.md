@@ -220,8 +220,9 @@ const SUPABASE_ADMIN_EMAIL = 'admin@email.com';
 
 ## How to use
 - Side A: enter code and download.
-- Side B upload login: enter upload user password in the single input and press Enter.
-- Side B admin login: type `admin` and press Enter once, then type admin password in the same input and press Enter again.
+- Side B upload login: enter upload user password in the single input and press keyboard Enter (or click Enter button).
+- Side B admin login: type `admin` and submit once, then type admin password in the same input and submit again.
+- If you accidentally entered admin mode, type `admin` and submit again to cancel admin mode.
 
 ## Notes
 - Upload max size is 50 MB.

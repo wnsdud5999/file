@@ -128,6 +128,13 @@ async function loginForUploadOrAdmin() {
     const authValue = String(uploadLoginPasswordInput.value || '');
 
     if (awaitingAdminPassword) {
+      if (authValue.trim().toLowerCase() === 'admin') {
+        awaitingAdminPassword = false;
+        uploadLoginPasswordInput.value = '';
+        setStatus(uploadAuthStatus, 'Admin mode canceled. Enter upload password or type admin again.');
+        return;
+      }
+
       if (!authValue) {
         setStatus(uploadAuthStatus, 'Admin password needed.', true);
         return;
@@ -425,6 +432,11 @@ downloadCodeInput.addEventListener('input', () => {
 });
 
 uploadLoginBtn.addEventListener('click', loginForUploadOrAdmin);
+uploadLoginPasswordInput.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  loginForUploadOrAdmin();
+});
 uploadLogoutBtn.addEventListener('click', logoutUpload);
 downloadBtn.addEventListener('click', downloadWithCode);
 uploadBtn.addEventListener('click', uploadFile);
