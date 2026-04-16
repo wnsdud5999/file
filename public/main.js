@@ -94,13 +94,13 @@ function refreshUploadAuthUI() {
   const loggedInUploader = Boolean(uploadUser);
   const loggedInAdmin = Boolean(adminUser);
 
-  uploadBtn.disabled = !loggedInUploader;
-  fileInput.disabled = !loggedInUploader;
+  if (uploadBtn) uploadBtn.disabled = !loggedInUploader;
+  if (fileInput) fileInput.disabled = !loggedInUploader;
 
-  uploadLogoutBtn.style.display = loggedInUploader || loggedInAdmin ? 'inline-block' : 'none';
-  uploadActions.classList.toggle('hidden', !loggedInUploader);
-  uploadHint.style.display = loggedInUploader || loggedInAdmin ? 'none' : 'block';
-  adminPanel.classList.toggle('hidden', !loggedInAdmin);
+  if (uploadLogoutBtn) uploadLogoutBtn.style.display = loggedInUploader || loggedInAdmin ? 'inline-block' : 'none';
+  if (uploadActions) uploadActions.classList.toggle('hidden', !loggedInUploader);
+  if (uploadHint) uploadHint.style.display = loggedInUploader || loggedInAdmin ? 'none' : 'block';
+  if (adminPanel) adminPanel.classList.toggle('hidden', !loggedInAdmin);
 
   if (loggedInUploader) {
     setStatus(uploadAuthStatus, `Access active: ${uploadUser.email}`);
@@ -427,25 +427,31 @@ async function loadAdminLogs() {
   }
 }
 
-downloadCodeInput.addEventListener('input', () => {
-  downloadCodeInput.value = onlyDigits(downloadCodeInput.value);
-});
+if (downloadCodeInput) {
+  downloadCodeInput.addEventListener('input', () => {
+    downloadCodeInput.value = onlyDigits(downloadCodeInput.value);
+  });
+}
 
-uploadLoginBtn.addEventListener('click', loginForUploadOrAdmin);
-uploadLoginPasswordInput.addEventListener('keydown', (event) => {
-  if (event.key !== 'Enter') return;
-  event.preventDefault();
-  loginForUploadOrAdmin();
-});
-uploadLogoutBtn.addEventListener('click', logoutUpload);
-downloadBtn.addEventListener('click', downloadWithCode);
-uploadBtn.addEventListener('click', uploadFile);
-adminRefreshBtn.addEventListener('click', loadAdminLogs);
+if (uploadLoginBtn) uploadLoginBtn.addEventListener('click', loginForUploadOrAdmin);
+if (uploadLoginPasswordInput) {
+  uploadLoginPasswordInput.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    loginForUploadOrAdmin();
+  });
+}
+if (uploadLogoutBtn) uploadLogoutBtn.addEventListener('click', logoutUpload);
+if (downloadBtn) downloadBtn.addEventListener('click', downloadWithCode);
+if (uploadBtn) uploadBtn.addEventListener('click', uploadFile);
+if (adminRefreshBtn) adminRefreshBtn.addEventListener('click', loadAdminLogs);
 
-fileInput.addEventListener('change', () => {
-  selectedUploadFile = fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
-  updateSelectedFileName(selectedUploadFile);
-});
+if (fileInput) {
+  fileInput.addEventListener('change', () => {
+    selectedUploadFile = fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+    updateSelectedFileName(selectedUploadFile);
+  });
+}
 
 function bindDropZone() {
   if (!dropZone) return;
@@ -484,6 +490,11 @@ function bindDropZone() {
 }
 
 (async () => {
+  if (!downloadCodeInput || !downloadBtn || !uploadLoginPasswordInput || !uploadLoginBtn) {
+    console.error('UI wiring failed: required elements are missing.');
+    return;
+  }
+
   const { data } = await supabase.auth.getSession();
   const user = data.session?.user || null;
 
