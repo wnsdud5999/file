@@ -3,103 +3,160 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Shared Firebase Notes</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <link rel="icon" href="data:," />
+    <title>Private Send</title>
     <style>
       :root {
-        font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-        color: #e4e7ec;
+        font-family: Inter, system-ui, Arial, sans-serif;
+        color: #ececf1;
       }
-      body { margin: 0; background: #0b1220; }
-      .container { max-width: 1180px; margin: 28px auto; padding: 0 16px; }
+      body { margin: 0; background: #212121; }
+      .container { max-width: 980px; margin: 20px auto; padding: 0 16px; }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
       .card {
-        background: #101828;
-        border: 1px solid #1d2939;
-        border-radius: 14px;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+        background: #2f2f2f;
+        border: 1px solid #3f3f46;
+        border-radius: 16px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, .25);
         padding: 18px;
       }
-      h1, h2, h3 { margin: 0 0 10px; }
-      .hidden { display: none; }
+      h1 { margin: 0 0 8px; font-size: 1.15rem; color: #fff; }
+      p { margin: 0; color: #c5c5d2; font-size: .92rem; line-height: 1.45; }
       .row { display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
-      input, textarea, button {
-        border: 1px solid #344054;
+      input, button { border: 1px solid #4a4a55; border-radius: 10px; padding: 10px 12px; font-size: .92rem; }
+      input { flex: 1; min-width: 120px; background: #1f1f1f; color: #f5f5f5; }
+      button { border-color: #6b6b74; background: #3a3a42; color: #fff; cursor: pointer; }
+      button:hover { background: #4a4a53; }
+      .status { margin-top: 10px; color: #b8b8c5; font-size: .9rem; min-height: 20px; }
+      .big-code {
+        margin-top: 14px;
+        font-size: 2rem;
+        font-weight: 700;
+        letter-spacing: 6px;
+        color: #f4f4f8;
+      }
+      .muted { color: #9a9aaa; }
+      .hidden { display: none; }
+      .drop-zone {
+        flex: 1;
+        min-width: 220px;
+        border: 1px dashed #62626d;
+        border-radius: 12px;
+        padding: 12px;
+        text-align: center;
+      }
+      .file-picker {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        margin-top: 8px;
+      }
+      .file-btn {
+        display: inline-block;
+        border: 1px solid #6b6b74;
+        border-radius: 8px;
+        padding: 8px 10px;
+        cursor: pointer;
+        background: #393944;
+        color: #fff;
+      }
+      .file-name {
+        font-size: .86rem;
+        color: #c5c5d2;
+        max-width: 200px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .admin-log-list {
+        display: grid;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .admin-log-item {
+        border: 1px solid #444453;
         border-radius: 10px;
-        padding: 10px 12px;
-        font-size: 0.92rem;
+        background: #272730;
+        padding: 10px;
       }
-      input, textarea {
-        color: #f2f4f7;
-        background: #0c111d;
+      .admin-log-head {
+        font-size: 0.9rem;
+        color: #ececf1;
       }
-      button { background: #6941c6; color: #fff; border-color: #6941c6; cursor: pointer; }
-      button.secondary { background: #1d2939; color: #d0d5dd; border-color: #344054; }
-      button.danger { background: #b42318; border-color: #b42318; }
-      textarea { width: 100%; min-height: 420px; box-sizing: border-box; resize: vertical; }
-      .status { font-size: 0.9rem; color: #98a2b3; }
-      #loginCard { max-width: 430px; margin: 90px auto; }
-      .appGrid { display: grid; grid-template-columns: 300px 1fr; gap: 14px; }
-      .panel { border: 1px solid #1d2939; border-radius: 12px; padding: 12px; background: #0c111d; }
-      .noteList { list-style: none; padding: 0; margin: 0; max-height: 460px; overflow: auto; }
-      .noteList li { display: flex; justify-content: space-between; gap: 8px; padding: 8px; border-radius: 8px; cursor: pointer; }
-      .noteList li.active { background: #1d2939; }
-      .noteList small { color: #98a2b3; display: block; }
-      .commits { margin-top: 12px; border-top: 1px solid #1d2939; padding-top: 12px; }
-      .commits ul { list-style: none; margin: 0; padding: 0; }
-      .commits li { margin: 8px 0; font-size: 0.9rem; color: #d0d5dd; }
-      ::placeholder { color: #98a2b3; }
-      @media (max-width: 900px) {
-        .appGrid { grid-template-columns: 1fr; }
+      .admin-log-meta {
+        margin-top: 6px;
+        font-size: 0.8rem;
+        color: #aaaac0;
       }
+      .admin-log-actions {
+        margin-top: 10px;
+        display: flex;
+        justify-content: flex-end;
+      }
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        border: 0;
+      }
+      @media (max-width: 860px){ .grid{ grid-template-columns: 1fr; } }
     </style>
   </head>
   <body>
     <div class="container">
-      <div id="loginCard" class="card">
-        <h1>Enter shared password</h1>
-        <p class="status">This signs into one shared Firebase account for your team.</p>
-        <div class="row">
-          <input id="passwordInput" type="password" placeholder="Password" style="flex: 1" />
-          <button id="loginBtn">Unlock</button>
-        </div>
-        <p id="loginStatus" class="status"></p>
-      </div>
-
-      <div id="appCard" class="card hidden">
-        <div class="row" style="justify-content: space-between; margin-top: 0">
-          <h1>Shared notes</h1>
-          <button id="logoutBtn" class="secondary">Logout</button>
-        </div>
-        <p id="appStatus" class="status">Connected.</p>
-
-        <div class="appGrid">
-          <div class="panel">
-            <div class="row" style="margin-top: 0">
-              <h3 style="margin: 0">Notes</h3>
-              <button id="newNoteBtn" class="secondary">+ New note</button>
-            </div>
-            <ul id="noteList" class="noteList"></ul>
+      <div class="grid">
+        <section class="card">
+          <h1>Side A</h1>
+          <p>Enter value.</p>
+          <div class="row">
+            <input id="downloadCodeInput" maxlength="6" inputmode="numeric" />
+            <button id="downloadBtn">Go</button>
           </div>
+          <div id="downloadStatus" class="status"></div>
+        </section>
 
-          <div class="panel">
-            <input id="noteTitleInput" placeholder="Note title" style="width: 100%; box-sizing: border-box" />
-            <textarea id="editor" placeholder="Write here..."></textarea>
-
+        <section class="card">
+          <h1>Side B</h1>
+          <p>Restricted area.</p>
+          <div class="row">
+            <input id="uploadLoginPasswordInput" type="password" />
+            <button id="uploadLoginBtn">Enter</button>
+            <button id="uploadLogoutBtn" style="display:none">Exit</button>
+          </div>
+          <div id="uploadAuthStatus" class="status"></div>
+          <div id="uploadActions" class="row hidden">
+            <div id="dropZone" class="drop-zone">
+              <p class="muted">Drop file here</p>
+              <div class="file-picker">
+                <label for="fileInput" class="file-btn">Choose file</label>
+                <span id="selectedFileName" class="file-name">No file selected</span>
+              </div>
+              <input id="fileInput" type="file" class="sr-only" />
+            </div>
+            <button id="uploadBtn">Continue</button>
+          </div>
+          <div id="adminPanel" class="hidden">
             <div class="row">
-              <input id="authorInput" placeholder="Your name (optional)" />
-              <input id="messageInput" placeholder="Commit message (optional)" style="flex: 1" />
-              <button id="commitBtn">Commit changes</button>
-              <button id="deleteNoteBtn" class="danger">Delete note</button>
+              <button id="adminRefreshBtn">Refresh</button>
             </div>
-
-            <div class="commits">
-              <h3>Recent commits (selected note)</h3>
-              <ul id="commitList"></ul>
-            </div>
+            <div id="adminLogStatus" class="status"></div>
+            <div id="adminLogList" class="admin-log-list"></div>
           </div>
-        </div>
+          <p id="uploadHint" class="status muted">Locked.</p>
+          <div id="uploadStatus" class="status"></div>
+          <div id="generatedCode" class="big-code"></div>
+        </section>
       </div>
     </div>
 
-    <script type="module" src="./main.js"></script>
+    <script type="module" src="./app.js?v=20260417"></script>
   </body>
 </html>
