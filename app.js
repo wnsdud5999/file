@@ -3,8 +3,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const APP_CONFIG = globalThis.PRIVATE_SEND_CONFIG || {};
 
 // ====== CHANGE THESE 4 VALUES ======
-const SUPABASE_URL = APP_CONFIG.SUPABASE_URL || 'REPLACE_SUPABASE_URL';
-const SUPABASE_ANON_KEY = APP_CONFIG.SUPABASE_ANON_KEY || 'REPLACE_SUPABASE_ANON_KEY';
+const SUPABASE_URL = 'https://pnyimurfileqbesoasdl.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBueWltdXJmaWxlcWJlc29hc2RsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0NDczMzAsImV4cCI6MjA5MTAyMzMzMH0.HCj5kpgu0D5b4-b02OkejdJrLdo4XX-ZrfzJ8ceW7UY';
 const SUPABASE_UPLOAD_EMAIL = APP_CONFIG.SUPABASE_UPLOAD_EMAIL || 'upload-user@example.com';
 const SUPABASE_ADMIN_EMAIL = APP_CONFIG.SUPABASE_ADMIN_EMAIL || 'admin@email.com';
 // ===================================
