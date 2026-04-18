@@ -227,5 +227,6 @@ const SUPABASE_ADMIN_EMAIL = 'admin@email.com';
 ## Notes
 - Upload max size is 50 MB.
 - You can upload multiple files in one batch (each file still max 50 MB).
+- Selected files appear in a queue under upload area; click `×` to remove/cancel before upload.
 - New codes are 3 digits.
 - Legacy 6-digit code input is still accepted.

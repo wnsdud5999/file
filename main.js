@@ -39,6 +39,7 @@ const uploadActions = document.getElementById('uploadActions');
 const uploadHint = document.getElementById('uploadHint');
 const uploadStatus = document.getElementById('uploadStatus');
 const generatedCode = document.getElementById('generatedCode');
+const uploadQueue = document.getElementById('uploadQueue');
 
 const adminPanel = document.getElementById('adminPanel');
 const adminRefreshBtn = document.getElementById('adminRefreshBtn');
@@ -48,6 +49,7 @@ const adminLogList = document.getElementById('adminLogList');
 let uploadUser = null;
 let adminUser = null;
 let selectedUploadFiles = [];
+let uploadFileQueue = [];
 let awaitingAdminPassword = false;
 
 function setStatus(target, message, error = false) {
@@ -69,6 +71,51 @@ function updateSelectedFileName(files) {
   }
 
   selectedFileName.textContent = `${files.length} files selected`;
+}
+
+function makeQueueId(file) {
+  return `${file.name}__${file.size}__${file.lastModified}__${crypto.randomUUID()}`;
+}
+
+function renderUploadQueue() {
+  if (!uploadQueue) return;
+  uploadQueue.innerHTML = '';
+
+  for (const item of uploadFileQueue) {
+    const row = document.createElement('div');
+    row.className = 'upload-queue-item';
+
+    const name = document.createElement('span');
+    name.textContent = cleanFileName(item.file.name);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'queue-remove-btn';
+    removeBtn.dataset.queueId = item.id;
+    removeBtn.textContent = '×';
+
+    row.appendChild(name);
+    row.appendChild(removeBtn);
+    uploadQueue.appendChild(row);
+  }
+}
+
+function syncSelectionUI() {
+  selectedUploadFiles = uploadFileQueue.map((item) => item.file);
+  updateSelectedFileName(selectedUploadFiles);
+  renderUploadQueue();
+}
+
+function appendToQueue(files) {
+  if (!files?.length) return;
+  const additions = files.map((file) => ({ id: makeQueueId(file), file }));
+  uploadFileQueue = [...uploadFileQueue, ...additions];
+  syncSelectionUI();
+}
+
+function removeFromQueue(queueId) {
+  uploadFileQueue = uploadFileQueue.filter((item) => item.id !== queueId);
+  syncSelectionUI();
 }
 
 function onlyDigits(value) {
@@ -195,7 +242,13 @@ async function loginForUploadOrAdmin() {
   } finally {
     uploadLoginBtn.disabled = false;
   }
-  throw new Error('Could not generate code. Try again.');
+
+  if (insertError) {
+    await supabase.storage.from(BUCKET).remove([objectPath]);
+    throw insertError;
+  }
+
+  return code;
 }
 
 async function logoutUpload() {
@@ -203,9 +256,10 @@ async function logoutUpload() {
   uploadUser = null;
   adminUser = null;
   selectedUploadFiles = [];
+  uploadFileQueue = [];
   awaitingAdminPassword = false;
   fileInput.value = '';
-  updateSelectedFileName([]);
+  syncSelectionUI();
   uploadLoginPasswordInput.value = '';
   if (adminLogList) adminLogList.innerHTML = '';
   setStatus(adminLogStatus, '');
@@ -257,7 +311,9 @@ async function uploadSingleFile(file) {
 
 async function uploadFile() {
   const filesFromInput = fileInput?.files ? Array.from(fileInput.files) : [];
-  const files = selectedUploadFiles.length ? selectedUploadFiles : filesFromInput;
+  const files = uploadFileQueue.length
+    ? uploadFileQueue.map((item) => item.file)
+    : (selectedUploadFiles.length ? selectedUploadFiles : filesFromInput);
 
   if (!uploadUser) {
     setStatus(uploadStatus, 'Upload access required first.', true);
@@ -315,8 +371,8 @@ async function uploadFile() {
     }
 
     fileInput.value = '';
-    selectedUploadFiles = [];
-    updateSelectedFileName([]);
+    uploadFileQueue = [];
+    syncSelectionUI();
   } catch (error) {
     setStatus(uploadStatus, error.message || 'Action failed', true);
   } finally {
@@ -491,8 +547,20 @@ if (adminRefreshBtn) adminRefreshBtn.addEventListener('click', loadAdminLogs);
 
 if (fileInput) {
   fileInput.addEventListener('change', () => {
-    selectedUploadFiles = fileInput.files ? Array.from(fileInput.files) : [];
-    updateSelectedFileName(selectedUploadFiles);
+    const files = fileInput.files ? Array.from(fileInput.files) : [];
+    appendToQueue(files);
+    fileInput.value = '';
+  });
+}
+
+if (uploadQueue) {
+  uploadQueue.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const queueId = target.dataset.queueId;
+    if (!queueId) return;
+    removeFromQueue(queueId);
+    setStatus(uploadStatus, 'Queue item removed.');
   });
 }
 
@@ -526,9 +594,8 @@ function bindDropZone() {
     if (!uploadUser) return;
     const droppedFiles = event.dataTransfer?.files ? Array.from(event.dataTransfer.files) : [];
     if (!droppedFiles.length) return;
-    selectedUploadFiles = droppedFiles;
-    updateSelectedFileName(droppedFiles);
-    setStatus(uploadStatus, `${droppedFiles.length} item(s) selected.`);
+    appendToQueue(droppedFiles);
+    setStatus(uploadStatus, `${droppedFiles.length} item(s) added to queue.`);
   });
 }
 
@@ -548,7 +615,7 @@ function bindDropZone() {
   }
 
   refreshUploadAuthUI();
-  updateSelectedFileName([]);
+  syncSelectionUI();
   bindDropZone();
 
   if (adminUser) {

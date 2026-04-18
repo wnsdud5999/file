@@ -33,9 +33,11 @@
       .status { margin-top: 10px; color: #b8b8c5; font-size: .9rem; min-height: 20px; }
       .big-code {
         margin-top: 14px;
-        font-size: 2rem;
+        font-size: 1.1rem;
         font-weight: 700;
-        letter-spacing: 6px;
+        letter-spacing: 1px;
+        white-space: pre-line;
+        line-height: 1.5;
         color: #f4f4f8;
       }
       .muted { color: #9a9aaa; }
@@ -107,6 +109,34 @@
         clip: rect(0, 0, 0, 0);
         border: 0;
       }
+      .upload-queue {
+        margin-top: 10px;
+        display: grid;
+        gap: 6px;
+      }
+      .upload-queue-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        background: #272730;
+        border: 1px solid #444453;
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-size: .86rem;
+        color: #cfd0db;
+      }
+      .queue-remove-btn {
+        border: 1px solid #6f6f79;
+        background: #383842;
+        color: #fff;
+        border-radius: 6px;
+        width: 28px;
+        height: 28px;
+        line-height: 1;
+        padding: 0;
+        font-weight: 700;
+      }
       @media (max-width: 860px){ .grid{ grid-template-columns: 1fr; } }
     </style>
   </head>
@@ -143,6 +173,7 @@
             </div>
             <button id="uploadBtn">Continue</button>
           </div>
+          <div id="uploadQueue" class="upload-queue"></div>
           <div id="adminPanel" class="hidden">
             <div class="row">
               <button id="adminRefreshBtn">Refresh</button>
@@ -157,6 +188,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260417"></script>
+    <script type="module" src="./app.js?v=20260417b"></script>
   </body>
 </html>
