@@ -242,6 +242,13 @@ async function loginForUploadOrAdmin() {
   } finally {
     uploadLoginBtn.disabled = false;
   }
+
+  if (insertError) {
+    await supabase.storage.from(BUCKET).remove([objectPath]);
+    throw insertError;
+  }
+
+  return code;
 }
 
 async function logoutUpload() {
@@ -381,11 +388,13 @@ async function downloadWithCode() {
     setStatus(downloadStatus, 'Please set SUPABASE_URL + SUPABASE_ANON_KEY in main.js.', true);
     return;
   }
+}
 
   if (code.length !== CODE_LENGTH && code.length !== LEGACY_CODE_LENGTH) {
     setStatus(downloadStatus, `Value must be ${CODE_LENGTH} or ${LEGACY_CODE_LENGTH} digits.`, true);
     return;
   }
+}
 
   downloadBtn.disabled = true;
   setStatus(downloadStatus, 'Checking...');
