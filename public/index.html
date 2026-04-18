@@ -126,6 +126,19 @@
         font-size: .86rem;
         color: #cfd0db;
       }
+      .upload-queue-left {
+        display: grid;
+        gap: 4px;
+      }
+      .upload-queue-status {
+        font-size: .78rem;
+        color: #a8a9b8;
+      }
+      .upload-queue-actions {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
       .queue-remove-btn {
         border: 1px solid #6f6f79;
         background: #383842;
@@ -136,6 +149,14 @@
         line-height: 1;
         padding: 0;
         font-weight: 700;
+      }
+      .queue-retry-btn, .queue-clear-btn {
+        border: 1px solid #6f6f79;
+        background: #383842;
+        color: #fff;
+        border-radius: 6px;
+        padding: 6px 9px;
+        font-size: .78rem;
       }
       @media (max-width: 860px){ .grid{ grid-template-columns: 1fr; } }
     </style>
@@ -172,6 +193,9 @@
               <input id="fileInput" type="file" class="sr-only" multiple />
             </div>
             <button id="uploadBtn">Continue</button>
+          </div>
+          <div class="row">
+            <button id="clearQueueBtn" class="queue-clear-btn" style="display:none">Clear all</button>
           </div>
           <div id="uploadQueue" class="upload-queue"></div>
           <div id="adminPanel" class="hidden">

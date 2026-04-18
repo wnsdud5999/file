@@ -1,10 +1,12 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
+const APP_CONFIG = globalThis.PRIVATE_SEND_CONFIG || {};
+
 // ====== CHANGE THESE 4 VALUES ======
-const SUPABASE_URL = 'https://pnyimurfileqbesoasdl.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBueWltdXJmaWxlcWJlc29hc2RsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0NDczMzAsImV4cCI6MjA5MTAyMzMzMH0.HCj5kpgu0D5b4-b02OkejdJrLdo4XX-ZrfzJ8ceW7UY';
-const SUPABASE_UPLOAD_EMAIL = 'upload-user@example.com';
-const SUPABASE_ADMIN_EMAIL = 'admin@email.com';
+const SUPABASE_URL = APP_CONFIG.SUPABASE_URL || 'REPLACE_SUPABASE_URL';
+const SUPABASE_ANON_KEY = APP_CONFIG.SUPABASE_ANON_KEY || 'REPLACE_SUPABASE_ANON_KEY';
+const SUPABASE_UPLOAD_EMAIL = APP_CONFIG.SUPABASE_UPLOAD_EMAIL || 'upload-user@example.com';
+const SUPABASE_ADMIN_EMAIL = APP_CONFIG.SUPABASE_ADMIN_EMAIL || 'admin@email.com';
 // ===================================
 
 const BUCKET = 'private-send-files';
@@ -40,6 +42,7 @@ const uploadHint = document.getElementById('uploadHint');
 const uploadStatus = document.getElementById('uploadStatus');
 const generatedCode = document.getElementById('generatedCode');
 const uploadQueue = document.getElementById('uploadQueue');
+const clearQueueBtn = document.getElementById('clearQueueBtn');
 
 const adminPanel = document.getElementById('adminPanel');
 const adminRefreshBtn = document.getElementById('adminRefreshBtn');
@@ -77,9 +80,20 @@ function makeQueueId(file) {
   return `${file.name}__${file.size}__${file.lastModified}__${crypto.randomUUID()}`;
 }
 
+function queueSummary(item) {
+  const statusLabel = {
+    queued: 'Queued',
+    uploading: `Uploading ${item.progress || 0}%`,
+    uploaded: `Uploaded (code: ${item.code || '-'})`,
+    failed: `Failed${item.error ? `: ${item.error}` : ''}`
+  };
+  return statusLabel[item.status] || 'Queued';
+}
+
 function renderUploadQueue() {
   if (!uploadQueue) return;
   uploadQueue.innerHTML = '';
+  if (clearQueueBtn) clearQueueBtn.style.display = uploadFileQueue.length ? 'inline-block' : 'none';
 
   for (const item of uploadFileQueue) {
     const row = document.createElement('div');
@@ -92,10 +106,37 @@ function renderUploadQueue() {
     removeBtn.type = 'button';
     removeBtn.className = 'queue-remove-btn';
     removeBtn.dataset.queueId = item.id;
+    removeBtn.dataset.action = 'remove';
     removeBtn.textContent = '×';
 
-    row.appendChild(name);
-    row.appendChild(removeBtn);
+    const status = document.createElement('span');
+    status.className = 'upload-queue-status';
+    status.textContent = queueSummary(item);
+
+    const actions = document.createElement('div');
+    actions.className = 'upload-queue-actions';
+
+    if (item.status === 'failed') {
+      const retryBtn = document.createElement('button');
+      retryBtn.type = 'button';
+      retryBtn.className = 'queue-retry-btn';
+      retryBtn.dataset.queueId = item.id;
+      retryBtn.dataset.action = 'retry';
+      retryBtn.textContent = 'Retry';
+      actions.appendChild(retryBtn);
+    }
+
+    if (item.status !== 'uploading') {
+      actions.appendChild(removeBtn);
+    }
+
+    const left = document.createElement('div');
+    left.className = 'upload-queue-left';
+    left.appendChild(name);
+    left.appendChild(status);
+
+    row.appendChild(left);
+    row.appendChild(actions);
     uploadQueue.appendChild(row);
   }
 }
@@ -108,13 +149,30 @@ function syncSelectionUI() {
 
 function appendToQueue(files) {
   if (!files?.length) return;
-  const additions = files.map((file) => ({ id: makeQueueId(file), file }));
+  const additions = files.map((file) => ({
+    id: makeQueueId(file),
+    file,
+    status: 'queued',
+    progress: 0,
+    code: '',
+    error: ''
+  }));
   uploadFileQueue = [...uploadFileQueue, ...additions];
   syncSelectionUI();
 }
 
 function removeFromQueue(queueId) {
   uploadFileQueue = uploadFileQueue.filter((item) => item.id !== queueId);
+  syncSelectionUI();
+}
+
+function updateQueueItem(queueId, patch) {
+  uploadFileQueue = uploadFileQueue.map((item) => (item.id === queueId ? { ...item, ...patch } : item));
+  syncSelectionUI();
+}
+
+function clearQueue() {
+  uploadFileQueue = [];
   syncSelectionUI();
 }
 
@@ -175,7 +233,7 @@ async function createUniqueCode() {
 
 async function loginForUploadOrAdmin() {
   if (SUPABASE_URL.includes('REPLACE_') || SUPABASE_ANON_KEY.includes('REPLACE_')) {
-    setStatus(uploadAuthStatus, 'Please set SUPABASE_URL + SUPABASE_ANON_KEY in main.js.', true);
+    setStatus(uploadAuthStatus, 'Please set SUPABASE_URL + SUPABASE_ANON_KEY in app.js.', true);
     return;
   }
 
@@ -260,7 +318,9 @@ async function logoutUpload() {
   setStatus(uploadStatus, 'Access closed.');
 }
 
-async function uploadSingleFile(file) {
+async function uploadSingleFile(queueItem) {
+  const { file } = queueItem;
+  updateQueueItem(queueItem.id, { status: 'uploading', progress: 15, error: '' });
   const objectPath = `${crypto.randomUUID()}-${cleanFileName(file.name)}`;
 
   const { error: uploadError } = await supabase.storage
@@ -268,6 +328,7 @@ async function uploadSingleFile(file) {
     .upload(objectPath, file, { upsert: false });
 
   if (uploadError) throw uploadError;
+  updateQueueItem(queueItem.id, { progress: 60 });
 
   let code = '';
   let insertError = null;
@@ -299,26 +360,24 @@ async function uploadSingleFile(file) {
     throw insertError;
   }
 
+  updateQueueItem(queueItem.id, { progress: 100 });
   return code;
 }
 
 async function uploadFile() {
-  const filesFromInput = fileInput?.files ? Array.from(fileInput.files) : [];
-  const files = uploadFileQueue.length
-    ? uploadFileQueue.map((item) => item.file)
-    : (selectedUploadFiles.length ? selectedUploadFiles : filesFromInput);
+  const queuedItems = uploadFileQueue.filter((item) => item.status === 'queued');
 
   if (!uploadUser) {
     setStatus(uploadStatus, 'Upload access required first.', true);
     return;
   }
 
-  if (!files.length) {
-    setStatus(uploadStatus, 'Select one or more items first.', true);
+  if (!queuedItems.length) {
+    setStatus(uploadStatus, 'No queued items to upload.', true);
     return;
   }
 
-  for (const file of files) {
+  for (const { file } of queuedItems) {
     if (file.size > MAX_UPLOAD_BYTES) {
       setStatus(uploadStatus, `Item too large (max 50 MB): ${cleanFileName(file.name)}`, true);
       return;
@@ -341,12 +400,15 @@ async function uploadFile() {
     const uploaded = [];
     const failed = [];
 
-    for (const file of files) {
+    for (const item of queuedItems) {
       try {
-        const code = await uploadSingleFile(file);
-        uploaded.push({ name: cleanFileName(file.name), code });
+        const code = await uploadSingleFile(item);
+        updateQueueItem(item.id, { status: 'uploaded', code, progress: 100, error: '' });
+        uploaded.push({ name: cleanFileName(item.file.name), code });
       } catch (error) {
-        failed.push(`${cleanFileName(file.name)} (${error.message || 'failed'})`);
+        const msg = error.message || 'failed';
+        updateQueueItem(item.id, { status: 'failed', error: msg, progress: 0 });
+        failed.push(`${cleanFileName(item.file.name)} (${msg})`);
       }
     }
 
@@ -364,7 +426,6 @@ async function uploadFile() {
     }
 
     fileInput.value = '';
-    uploadFileQueue = [];
     syncSelectionUI();
   } catch (error) {
     setStatus(uploadStatus, error.message || 'Action failed', true);
@@ -378,7 +439,7 @@ async function downloadWithCode() {
   downloadCodeInput.value = code;
 
   if (SUPABASE_URL.includes('REPLACE_') || SUPABASE_ANON_KEY.includes('REPLACE_')) {
-    setStatus(downloadStatus, 'Please set SUPABASE_URL + SUPABASE_ANON_KEY in main.js.', true);
+    setStatus(downloadStatus, 'Please set SUPABASE_URL + SUPABASE_ANON_KEY in app.js.', true);
     return;
   }
 
@@ -549,9 +610,22 @@ if (uploadQueue) {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
     const queueId = target.dataset.queueId;
+    const action = target.dataset.action;
     if (!queueId) return;
+    if (action === 'retry') {
+      updateQueueItem(queueId, { status: 'queued', error: '', progress: 0, code: '' });
+      setStatus(uploadStatus, 'Queue item ready to retry.');
+      return;
+    }
     removeFromQueue(queueId);
     setStatus(uploadStatus, 'Queue item removed.');
+  });
+}
+
+if (clearQueueBtn) {
+  clearQueueBtn.addEventListener('click', () => {
+    clearQueue();
+    setStatus(uploadStatus, 'Queue cleared.');
   });
 }
 

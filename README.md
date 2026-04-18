@@ -209,13 +209,26 @@ $$;
 grant execute on function public.consume_transfer(text) to anon;
 ```
 
-## App config in `main.js`
+## App config in `app.js`
 
 ```js
 const SUPABASE_URL = 'YOUR_PROJECT_URL';
 const SUPABASE_ANON_KEY = 'YOUR_ANON_PUBLIC_KEY';
 const SUPABASE_UPLOAD_EMAIL = 'upload-user@example.com';
 const SUPABASE_ADMIN_EMAIL = 'admin@email.com';
+```
+
+Optional (recommended) global config object before loading `app.js`:
+
+```html
+<script>
+  window.PRIVATE_SEND_CONFIG = {
+    SUPABASE_URL: 'YOUR_PROJECT_URL',
+    SUPABASE_ANON_KEY: 'YOUR_ANON_PUBLIC_KEY',
+    SUPABASE_UPLOAD_EMAIL: 'upload-user@example.com',
+    SUPABASE_ADMIN_EMAIL: 'admin@email.com'
+  };
+</script>
 ```
 
 ## How to use
@@ -226,6 +239,7 @@ const SUPABASE_ADMIN_EMAIL = 'admin@email.com';
 
 ## Notes
 - Upload max size is 50 MB.
+- Server-side upload limit is aligned to 50 MB as well.
 - You can upload multiple files in one batch (each file still max 50 MB).
 - Selected files appear in a queue under upload area; click `×` to remove/cancel before upload.
 - New codes are 3 digits.

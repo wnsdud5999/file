@@ -11,8 +11,9 @@ const UPLOAD_PASSWORD = process.env.UPLOAD_PASSWORD || 'upload123!';
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const SUPABASE_BUCKET = process.env.SUPABASE_BUCKET || 'private-send-files';
-const TRANSFER_TTL_MS = 24 * 60 * 60 * 1000;
-const MAX_BODY_BYTES = 35_000_000;
+const TRANSFER_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+const MAX_BODY_BYTES = 80_000_000;
 const CODE_LENGTH = 3;
 const LEGACY_CODE_LENGTH = 6;
 
@@ -53,6 +54,12 @@ function mimeType(filePath) {
   if (filePath.endsWith('.html')) return 'text/html; charset=utf-8';
   if (filePath.endsWith('.js')) return 'text/javascript; charset=utf-8';
   if (filePath.endsWith('.css')) return 'text/css; charset=utf-8';
+  if (filePath.endsWith('.ico')) return 'image/x-icon';
+  if (filePath.endsWith('.png')) return 'image/png';
+  if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) return 'image/jpeg';
+  if (filePath.endsWith('.svg')) return 'image/svg+xml';
+  if (filePath.endsWith('.json')) return 'application/json; charset=utf-8';
+  if (filePath.endsWith('.txt')) return 'text/plain; charset=utf-8';
   return 'application/octet-stream';
 }
 
@@ -186,6 +193,7 @@ async function handleUpload(req, res) {
 
   const buffer = Buffer.from(contentBase64, 'base64');
   if (!buffer.length) return json(res, 400, { error: 'File is empty' });
+  if (buffer.length > MAX_UPLOAD_BYTES) return json(res, 400, { error: 'File too large (max 50 MB)' });
 
   const code = await createUniqueCode();
   const objectPath = `${crypto.randomUUID()}-${fileName}`;
