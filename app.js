@@ -216,7 +216,8 @@ function isFresh(createdAt) {
 }
 
 function isManifestTransfer(transfer) {
-  return transfer?.content_type === MANIFEST_CONTENT_TYPE || String(transfer?.object_path || '').endsWith('.manifest.json');
+  const objectPath = String(transfer?.object_path || '');
+  return transfer?.content_type === MANIFEST_CONTENT_TYPE || objectPath.endsWith('manifest.json');
 }
 
 async function uploadChunkedFile(file, queueId) {
