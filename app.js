@@ -331,12 +331,13 @@ function triggerDownload(blobLike, filename, contentType) {
 function refreshUploadAuthUI() {
   const loggedInUploader = Boolean(uploadUser);
   const loggedInAdmin = Boolean(adminUser);
+  const canUpload = loggedInUploader || loggedInAdmin;
 
-  if (uploadBtn) uploadBtn.disabled = !loggedInUploader;
-  if (fileInput) fileInput.disabled = !loggedInUploader;
+  if (uploadBtn) uploadBtn.disabled = !canUpload;
+  if (fileInput) fileInput.disabled = !canUpload;
 
   if (uploadLogoutBtn) uploadLogoutBtn.style.display = loggedInUploader || loggedInAdmin ? 'inline-block' : 'none';
-  if (uploadActions) uploadActions.classList.toggle('hidden', !loggedInUploader);
+  if (uploadActions) uploadActions.classList.toggle('hidden', !canUpload);
   if (uploadHint) uploadHint.style.display = loggedInUploader || loggedInAdmin ? 'none' : 'block';
   if (adminPanel) adminPanel.classList.toggle('hidden', !loggedInAdmin);
 
@@ -502,8 +503,9 @@ async function uploadSingleFile(queueItem) {
 
 async function uploadFile() {
   const queuedItems = uploadFileQueue.filter((item) => item.status === 'queued');
+  const canUpload = Boolean(uploadUser || adminUser);
 
-  if (!uploadUser) {
+  if (!canUpload) {
     setStatus(uploadStatus, 'Upload access required first.', true);
     return;
   }
