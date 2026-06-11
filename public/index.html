@@ -105,6 +105,10 @@
         background: var(--card-hover);
       }
 
+      .card > :first-child {
+        margin-top: 0;
+      }
+
       h1 {
         margin: 0 0 6px;
         color: var(--text);
@@ -451,6 +455,180 @@
           grid-template-columns: 1fr;
         }
       }
+
+      .drop-zone:hover {
+        background: var(--surface-2);
+        border-color: var(--accent);
+      }
+
+      .file-picker {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 12px;
+      }
+
+      .file-btn {
+        display: inline-flex;
+        align-items: center;
+        min-height: 38px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-pill);
+        padding: 8px 14px;
+        cursor: pointer;
+        background: var(--surface-2);
+        color: var(--text);
+      }
+
+      .file-btn:hover {
+        background: var(--surface-3);
+      }
+
+      .file-name {
+        max-width: 220px;
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .admin-log-list,
+      .upload-queue,
+      .download-code-list {
+        display: grid;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .admin-log-item,
+      .upload-queue-item {
+        background: var(--surface);
+        border: 1px solid var(--border-soft);
+        border-radius: var(--radius-md);
+        color: var(--text-muted);
+      }
+
+      .admin-log-item {
+        padding: 12px;
+      }
+
+      .admin-log-head {
+        color: var(--text);
+        font-size: 0.9rem;
+        font-weight: 500;
+      }
+
+      .admin-log-meta {
+        margin-top: 6px;
+        color: var(--text-subtle);
+        font-size: 0.8rem;
+      }
+
+      .admin-log-actions {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 10px;
+      }
+
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        border: 0;
+      }
+
+      .upload-queue-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 12px;
+        font-size: 0.86rem;
+      }
+
+      .upload-queue-left {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+      }
+
+      .upload-queue-left > span:first-child {
+        color: var(--text);
+        overflow-wrap: anywhere;
+      }
+
+      .upload-queue-status {
+        color: var(--text-subtle);
+        font-size: 0.78rem;
+      }
+
+      .upload-queue-actions {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex: 0 0 auto;
+      }
+
+      .queue-remove-btn,
+      .small-icon-btn {
+        width: 40px;
+        height: 40px;
+        min-height: 40px;
+        padding: 0;
+        font-weight: 600;
+      }
+
+      .queue-remove-btn {
+        color: var(--text-muted);
+      }
+
+      .queue-remove-btn:hover:not(:disabled) {
+        color: #ffffff;
+        background: rgba(239, 68, 68, 0.18);
+        border-color: rgba(239, 68, 68, 0.4);
+      }
+
+      .queue-retry-btn,
+      .queue-clear-btn {
+        min-height: 34px;
+        padding: 7px 12px;
+        color: var(--text-muted);
+        font-size: 0.8rem;
+      }
+
+      .queue-retry-btn:hover:not(:disabled) {
+        color: #ffffff;
+        background: var(--accent-soft);
+        border-color: var(--accent);
+      }
+
+      .download-code-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .download-code-input {
+        min-width: 90px;
+      }
+
+      @media (max-width: 860px) {
+        .container {
+          width: min(100% - 24px, 1040px);
+          padding: 16px 0;
+        }
+
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
       .upload-queue-left {
         display: grid;
         gap: 4px;
@@ -512,57 +690,52 @@
   <body>
     <div class="container">
       <div class="grid">
-        <section class="card">
-          <h1>Side A</h1>
-          <p>Enter value.</p>
+        <section class="card" aria-label="Code entry">
           <div id="downloadCodeRows" class="download-code-list">
             <div class="download-code-row">
-              <input id="downloadCodeInput" class="download-code-input" maxlength="6" inputmode="numeric" />
+              <input id="downloadCodeInput" class="download-code-input" maxlength="6" inputmode="numeric" aria-label="Code" />
               <button id="addDownloadCodeBtn" class="small-icon-btn" type="button" aria-label="Add code">+</button>
-              <button id="downloadBtn" type="button">Go</button>
+              <button id="downloadBtn" type="button" aria-label="Submit">↵</button>
             </div>
           </div>
           <div id="downloadStatus" class="status"></div>
         </section>
 
-        <section class="card">
-          <h1>Side B</h1>
-          <p>Restricted area.</p>
+        <section class="card" aria-label="Access area">
           <div class="row">
-            <input id="uploadLoginPasswordInput" type="password" />
-            <button id="uploadLoginBtn">Enter</button>
-            <button id="uploadLogoutBtn" style="display:none">Exit</button>
+            <input id="uploadLoginPasswordInput" type="password" aria-label="Access key" />
+            <button id="uploadLoginBtn" type="button" aria-label="Enter">↵</button>
+            <button id="uploadLogoutBtn" type="button" aria-label="Exit" style="display:none">×</button>
           </div>
           <div id="uploadAuthStatus" class="status"></div>
           <div id="uploadActions" class="row hidden">
-            <div id="dropZone" class="drop-zone">
-              <p class="muted">Drop file here</p>
+            <div id="dropZone" class="drop-zone" aria-label="File drop zone">
               <div class="file-picker">
-                <label for="fileInput" class="file-btn">Choose file</label>
-                <span id="selectedFileName" class="file-name">No files selected</span>
+                <label for="fileInput" class="file-btn" aria-label="Choose file">＋</label>
+                <span id="selectedFileName" class="file-name"></span>
               </div>
               <input id="fileInput" type="file" class="sr-only" multiple />
             </div>
-            <button id="uploadBtn">Continue</button>
+            <button id="uploadBtn" type="button" aria-label="Upload">↑</button>
           </div>
           <div class="row">
-            <button id="clearQueueBtn" class="queue-clear-btn" style="display:none">Clear all</button>
+            <button id="clearQueueBtn" class="queue-clear-btn" type="button" aria-label="Clear all" style="display:none">××</button>
           </div>
           <div id="uploadQueue" class="upload-queue"></div>
           <div id="adminPanel" class="hidden">
             <div class="row">
-              <button id="adminRefreshBtn">Refresh</button>
+              <button id="adminRefreshBtn" type="button" aria-label="Refresh">↻</button>
             </div>
             <div id="adminLogStatus" class="status"></div>
             <div id="adminLogList" class="admin-log-list"></div>
           </div>
-          <p id="uploadHint" class="status muted">Locked.</p>
+          <p id="uploadHint" class="status muted"></p>
           <div id="uploadStatus" class="status"></div>
           <div id="generatedCode" class="big-code"></div>
         </section>
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260611c"></script>
+    <script type="module" src="./app.js?v=20260611d"></script>
   </body>
 </html>

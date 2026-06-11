@@ -110,7 +110,7 @@ function ensureSupabaseReady(statusTarget = null) {
 function updateSelectedFileName(files) {
   if (!selectedFileName) return;
   if (!files || !files.length) {
-    selectedFileName.textContent = 'No files selected';
+    selectedFileName.textContent = '';
     return;
   }
 
@@ -119,7 +119,7 @@ function updateSelectedFileName(files) {
     return;
   }
 
-  selectedFileName.textContent = `${files.length} files selected`;
+  selectedFileName.textContent = `${files.length}`;
 }
 
 function makeQueueId(file) {
@@ -366,11 +366,11 @@ function refreshUploadAuthUI() {
   if (adminPanel) adminPanel.classList.toggle('hidden', !loggedInAdmin);
 
   if (loggedInUploader) {
-    setStatus(uploadAuthStatus, `Access active: ${uploadUser.email}`);
+    setStatus(uploadAuthStatus, '●');
   } else if (loggedInAdmin) {
-    setStatus(uploadAuthStatus, `Admin active: ${adminUser.email}`);
+    setStatus(uploadAuthStatus, '●●');
   } else {
-    setStatus(uploadAuthStatus, 'Access required.');
+    setStatus(uploadAuthStatus, '');
   }
 
 }
@@ -442,7 +442,7 @@ async function loginForUploadOrAdmin() {
       uploadLoginPasswordInput.value = '';
       awaitingAdminPassword = false;
       refreshUploadAuthUI();
-      setStatus(uploadStatus, 'Admin access granted.');
+      setStatus(uploadStatus, '●●');
       await loadAdminLogs();
       return;
     }
@@ -471,7 +471,7 @@ async function loginForUploadOrAdmin() {
     uploadLoginPasswordInput.value = '';
     awaitingAdminPassword = false;
     refreshUploadAuthUI();
-    setStatus(uploadStatus, 'Access granted.');
+    setStatus(uploadStatus, '●');
   } catch (error) {
     setStatus(uploadAuthStatus, error.message || 'Login failed.', true);
   } finally {
@@ -492,7 +492,7 @@ async function logoutUpload() {
   if (adminLogList) adminLogList.innerHTML = '';
   setStatus(adminLogStatus, '');
   refreshUploadAuthUI();
-  setStatus(uploadStatus, 'Access closed.');
+  setStatus(uploadStatus, '');
 }
 
 async function uploadSingleFile(queueItem) {

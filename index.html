@@ -105,6 +105,10 @@
         background: var(--card-hover);
       }
 
+      .card > :first-child {
+        margin-top: 0;
+      }
+
       h1 {
         margin: 0 0 6px;
         color: var(--text);
@@ -451,6 +455,41 @@
           grid-template-columns: 1fr;
         }
       }
+
+      .queue-retry-btn,
+      .queue-clear-btn {
+        min-height: 34px;
+        padding: 7px 12px;
+        color: var(--text-muted);
+        font-size: 0.8rem;
+      }
+
+      .queue-retry-btn:hover:not(:disabled) {
+        color: #ffffff;
+        background: var(--accent-soft);
+        border-color: var(--accent);
+      }
+
+      .download-code-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .download-code-input {
+        min-width: 90px;
+      }
+
+      @media (max-width: 860px) {
+        .container {
+          width: min(100% - 24px, 1040px);
+          padding: 16px 0;
+        }
+
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
       .queue-remove-btn {
         border: 1px solid #6f6f79;
         background: #383842;
@@ -499,57 +538,52 @@
   <body>
     <div class="container">
       <div class="grid">
-        <section class="card">
-          <h1>Side A</h1>
-          <p>Enter value.</p>
+        <section class="card" aria-label="Code entry">
           <div id="downloadCodeRows" class="download-code-list">
             <div class="download-code-row">
-              <input id="downloadCodeInput" class="download-code-input" maxlength="6" inputmode="numeric" />
+              <input id="downloadCodeInput" class="download-code-input" maxlength="6" inputmode="numeric" aria-label="Code" />
               <button id="addDownloadCodeBtn" class="small-icon-btn" type="button" aria-label="Add code">+</button>
-              <button id="downloadBtn" type="button">Go</button>
+              <button id="downloadBtn" type="button" aria-label="Submit">↵</button>
             </div>
           </div>
           <div id="downloadStatus" class="status"></div>
         </section>
 
-        <section class="card">
-          <h1>Side B</h1>
-          <p>Restricted area.</p>
+        <section class="card" aria-label="Access area">
           <div class="row">
-            <input id="uploadLoginPasswordInput" type="password" />
-            <button id="uploadLoginBtn">Enter</button>
-            <button id="uploadLogoutBtn" style="display:none">Exit</button>
+            <input id="uploadLoginPasswordInput" type="password" aria-label="Access key" />
+            <button id="uploadLoginBtn" type="button" aria-label="Enter">↵</button>
+            <button id="uploadLogoutBtn" type="button" aria-label="Exit" style="display:none">×</button>
           </div>
           <div id="uploadAuthStatus" class="status"></div>
           <div id="uploadActions" class="row hidden">
-            <div id="dropZone" class="drop-zone">
-              <p class="muted">Drop file here</p>
+            <div id="dropZone" class="drop-zone" aria-label="File drop zone">
               <div class="file-picker">
-                <label for="fileInput" class="file-btn">Choose file</label>
-                <span id="selectedFileName" class="file-name">No files selected</span>
+                <label for="fileInput" class="file-btn" aria-label="Choose file">＋</label>
+                <span id="selectedFileName" class="file-name"></span>
               </div>
               <input id="fileInput" type="file" class="sr-only" multiple />
             </div>
-            <button id="uploadBtn">Continue</button>
+            <button id="uploadBtn" type="button" aria-label="Upload">↑</button>
           </div>
           <div class="row">
-            <button id="clearQueueBtn" class="queue-clear-btn" style="display:none">Clear all</button>
+            <button id="clearQueueBtn" class="queue-clear-btn" type="button" aria-label="Clear all" style="display:none">××</button>
           </div>
           <div id="uploadQueue" class="upload-queue"></div>
           <div id="adminPanel" class="hidden">
             <div class="row">
-              <button id="adminRefreshBtn">Refresh</button>
+              <button id="adminRefreshBtn" type="button" aria-label="Refresh">↻</button>
             </div>
             <div id="adminLogStatus" class="status"></div>
             <div id="adminLogList" class="admin-log-list"></div>
           </div>
-          <p id="uploadHint" class="status muted">Locked.</p>
+          <p id="uploadHint" class="status muted"></p>
           <div id="uploadStatus" class="status"></div>
           <div id="generatedCode" class="big-code"></div>
         </section>
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260611c"></script>
+    <script type="module" src="./app.js?v=20260611d"></script>
   </body>
 </html>
