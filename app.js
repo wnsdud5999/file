@@ -34,6 +34,7 @@ const SPLIT_PART_BYTES = 50 * 1024 * 1024; // 50MB per part
 const RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const CODE_LENGTH = 3;
 const LEGACY_CODE_LENGTH = 6;
+const MAX_DOWNLOAD_CODES = 10;
 
 function isValidHttpUrl(value) {
   try {
@@ -61,6 +62,8 @@ const supabasePublic = hasValidSupabaseConfig
   : null;
 
 const downloadCodeInput = document.getElementById('downloadCodeInput');
+const downloadCodeRows = document.getElementById('downloadCodeRows');
+const addDownloadCodeBtn = document.getElementById('addDownloadCodeBtn');
 const downloadBtn = document.getElementById('downloadBtn');
 const downloadStatus = document.getElementById('downloadStatus');
 
@@ -221,6 +224,91 @@ function clearQueue() {
 
 function onlyDigits(value) {
   return String(value || '').replace(/\D/g, '').slice(0, LEGACY_CODE_LENGTH);
+}
+
+function getDownloadInputs() {
+  return Array.from(document.querySelectorAll('.download-code-input'));
+}
+
+function getDownloadCodes() {
+  return getDownloadInputs()
+    .map((input) => onlyDigits(input.value))
+    .filter(Boolean);
+}
+
+function updateAddDownloadCodeButton() {
+  if (!addDownloadCodeBtn) return;
+  addDownloadCodeBtn.disabled = getDownloadInputs().length >= MAX_DOWNLOAD_CODES;
+}
+
+function parseDownloadCodeGroups(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+
+  const digitTokens = raw.split(/\D+/).filter(Boolean);
+  if (digitTokens.length > 1) {
+    return digitTokens.map(onlyDigits).filter(Boolean);
+  }
+
+  const allDigits = raw.replace(/\D/g, '');
+  if (allDigits.length > LEGACY_CODE_LENGTH && allDigits.length % CODE_LENGTH === 0) {
+    return allDigits.match(new RegExp(`.{1,${CODE_LENGTH}}`, 'g')) || [];
+  }
+
+  return allDigits ? [onlyDigits(allDigits)] : [];
+}
+
+function addDownloadCodeInput(value = '') {
+  if (!downloadCodeRows) return null;
+  if (getDownloadInputs().length >= MAX_DOWNLOAD_CODES) {
+    setStatus(downloadStatus, `Maximum ${MAX_DOWNLOAD_CODES} values at once.`, true);
+    updateAddDownloadCodeButton();
+    return null;
+  }
+
+  const row = document.createElement('div');
+  row.className = 'download-code-row';
+
+  const input = document.createElement('input');
+  input.className = 'download-code-input';
+  input.maxLength = LEGACY_CODE_LENGTH;
+  input.inputMode = 'numeric';
+  input.value = onlyDigits(value);
+
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button';
+  removeBtn.className = 'small-icon-btn';
+  removeBtn.setAttribute('aria-label', 'Remove code');
+  removeBtn.textContent = '×';
+  removeBtn.addEventListener('click', () => {
+    row.remove();
+    const inputs = getDownloadInputs();
+    if (!inputs.length) addDownloadCodeInput();
+    updateAddDownloadCodeButton();
+  });
+
+  row.appendChild(input);
+  row.appendChild(removeBtn);
+  downloadCodeRows.appendChild(row);
+  updateAddDownloadCodeButton();
+  input.focus();
+  return input;
+}
+
+function handleDownloadCodeInput(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) return;
+
+  const rawValue = target.value;
+  const digitGroups = parseDownloadCodeGroups(rawValue);
+  target.value = onlyDigits(rawValue);
+
+  if (digitGroups.length <= 1) return;
+
+  target.value = onlyDigits(digitGroups[0]);
+  for (const group of digitGroups.slice(1, MAX_DOWNLOAD_CODES)) {
+    if (!addDownloadCodeInput(group)) break;
+  }
 }
 
 function randomCode() {
@@ -515,48 +603,81 @@ async function uploadFile() {
   }
 }
 
+async function downloadOneCode(code) {
+  const { data: consumed, error: consumeError } = await supabasePublic.rpc('consume_transfer', {
+    p_code: code
+  });
+
+  if (consumeError) throw consumeError;
+  const transfer = Array.isArray(consumed) ? consumed[0] : consumed;
+
+  if (!transfer) {
+    throw new Error('Value not found or already used.');
+  }
+
+  if (!isFresh(transfer.created_at)) {
+    await supabasePublic.storage.from(BUCKET).remove([transfer.object_path]);
+    await supabasePublic.from('transfers').delete().eq('object_path', transfer.object_path);
+    throw new Error('Value expired.');
+  }
+
+  const resolved = await resolveTransferFile(transfer, supabasePublic);
+  triggerDownload(resolved.blob, resolved.filename || `download-${code}`, resolved.contentType);
+}
+
 async function downloadWithCode() {
   if (!ensureSupabaseReady(downloadStatus)) return;
-  const code = onlyDigits(downloadCodeInput.value);
-  downloadCodeInput.value = code;
 
-  if (code.length !== CODE_LENGTH && code.length !== LEGACY_CODE_LENGTH) {
-    setStatus(downloadStatus, `Value must be ${CODE_LENGTH} or ${LEGACY_CODE_LENGTH} digits.`, true);
+  const inputs = getDownloadInputs();
+  for (const input of inputs) input.value = onlyDigits(input.value);
+
+  const codes = getDownloadCodes().slice(0, MAX_DOWNLOAD_CODES);
+  if (!codes.length) {
+    setStatus(downloadStatus, 'Enter at least one value.', true);
+    return;
+  }
+
+  const invalidCode = codes.find((code) => code.length !== CODE_LENGTH && code.length !== LEGACY_CODE_LENGTH);
+  if (invalidCode) {
+    setStatus(downloadStatus, `Each value must be ${CODE_LENGTH} or ${LEGACY_CODE_LENGTH} digits.`, true);
     return;
   }
 
   downloadBtn.disabled = true;
-  setStatus(downloadStatus, 'Checking...');
+  if (addDownloadCodeBtn) addDownloadCodeBtn.disabled = true;
+  setStatus(downloadStatus, `Checking ${codes.length} item(s)...`);
+
+  const failed = [];
+  let completed = 0;
 
   try {
-    const { data: consumed, error: consumeError } = await supabasePublic.rpc('consume_transfer', {
-      p_code: code
-    });
-
-    if (consumeError) throw consumeError;
-    const transfer = Array.isArray(consumed) ? consumed[0] : consumed;
-
-    if (!transfer) {
-      throw new Error('Value not found or already used.');
+    for (const code of codes) {
+      try {
+        await downloadOneCode(code);
+        completed += 1;
+        setStatus(downloadStatus, `Completed ${completed}/${codes.length}.`);
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      } catch (error) {
+        failed.push(`${code} (${error.message || 'failed'})`);
+      }
     }
 
-    if (!isFresh(transfer.created_at)) {
-      await supabasePublic.storage.from(BUCKET).remove([transfer.object_path]);
-      await supabasePublic.from('transfers').delete().eq('object_path', transfer.object_path);
-      throw new Error('Value expired.');
+    if (failed.length) {
+      setStatus(downloadStatus, `Completed ${completed}/${codes.length}. Failed: ${failed.join(', ')}`, true);
+      return;
     }
 
-    const resolved = await resolveTransferFile(transfer, supabasePublic);
-    triggerDownload(resolved.blob, resolved.filename || `download-${code}`, resolved.contentType);
-
-    setStatus(downloadStatus, 'Completed. Value is now invalid.');
-    downloadCodeInput.value = '';
+    setStatus(downloadStatus, `Completed ${completed}/${codes.length}. Values are now invalid.`);
+    for (const input of inputs) input.value = '';
+    updateAddDownloadCodeButton();
   } catch (error) {
     setStatus(downloadStatus, error.message || 'Action failed', true);
   } finally {
     downloadBtn.disabled = false;
+    updateAddDownloadCodeButton();
   }
 }
+
 
 async function adminDownload(objectPath, originalName, contentType) {
   if (!adminUser) {
@@ -653,11 +774,16 @@ async function loadAdminLogs() {
   }
 }
 
-if (downloadCodeInput) {
-  downloadCodeInput.addEventListener('input', () => {
-    downloadCodeInput.value = onlyDigits(downloadCodeInput.value);
+if (downloadCodeRows) {
+  downloadCodeRows.addEventListener('input', handleDownloadCodeInput);
+  downloadCodeRows.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    if (!(event.target instanceof HTMLInputElement)) return;
+    event.preventDefault();
+    downloadWithCode();
   });
 }
+if (addDownloadCodeBtn) addDownloadCodeBtn.addEventListener('click', () => addDownloadCodeInput());
 
 if (uploadLoginBtn) uploadLoginBtn.addEventListener('click', loginForUploadOrAdmin);
 if (uploadLoginPasswordInput) {
@@ -731,7 +857,7 @@ function bindDropZone() {
   });
 
   dropZone.addEventListener('drop', (event) => {
-    if (!uploadUser) return;
+    if (!uploadUser && !adminUser) return;
     const droppedFiles = event.dataTransfer?.files ? Array.from(event.dataTransfer.files) : [];
     if (!droppedFiles.length) return;
     appendToQueue(droppedFiles);
@@ -762,6 +888,7 @@ function bindDropZone() {
 
   refreshUploadAuthUI();
   syncSelectionUI();
+  updateAddDownloadCodeButton();
   bindDropZone();
 
   if (adminUser) {

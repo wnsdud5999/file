@@ -158,6 +158,29 @@
         padding: 6px 9px;
         font-size: .78rem;
       }
+      .download-code-list {
+        display: grid;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .download-code-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .download-code-input {
+        min-width: 90px;
+      }
+      .small-icon-btn {
+        border: 1px solid #6f6f79;
+        background: #383842;
+        color: #fff;
+        border-radius: 8px;
+        width: 38px;
+        height: 38px;
+        padding: 0;
+        font-weight: 700;
+      }
       @media (max-width: 860px){ .grid{ grid-template-columns: 1fr; } }
     </style>
   </head>
@@ -167,9 +190,12 @@
         <section class="card">
           <h1>Side A</h1>
           <p>Enter value.</p>
-          <div class="row">
-            <input id="downloadCodeInput" maxlength="6" inputmode="numeric" />
-            <button id="downloadBtn">Go</button>
+          <div id="downloadCodeRows" class="download-code-list">
+            <div class="download-code-row">
+              <input id="downloadCodeInput" class="download-code-input" maxlength="6" inputmode="numeric" />
+              <button id="addDownloadCodeBtn" class="small-icon-btn" type="button" aria-label="Add code">+</button>
+              <button id="downloadBtn" type="button">Go</button>
+            </div>
           </div>
           <div id="downloadStatus" class="status"></div>
         </section>
@@ -212,6 +238,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260422a"></script>
+    <script type="module" src="./app.js?v=20260611b"></script>
   </body>
 </html>
