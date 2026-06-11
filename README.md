@@ -232,7 +232,7 @@ Optional (recommended) global config object before loading `app.js`:
 ```
 
 ## How to use
-- Side A: enter code and download.
+- Side A: enter one code, or press `+` to add up to 10 code boxes and download several codes in one run.
 - Side B upload login: enter upload user password in the single input and press keyboard Enter (or click Enter button).
 - Side B admin login: type `admin` and submit once, then type admin password in the same input and submit again.
 - If you accidentally entered admin mode, type `admin` and submit again to cancel admin mode.
@@ -245,4 +245,5 @@ Optional (recommended) global config object before loading `app.js`:
 - Selected files appear in a queue under upload area; click `×` to remove/cancel before upload.
 - New codes are 3 digits.
 - Legacy 6-digit code input is still accepted.
+- You can paste several codes into Side A; the app will make extra code boxes for them when possible, up to 10 total.
 - Supabase JS SDK now uses CDN fallback order (`esm.sh` -> `jsdelivr` -> `unpkg`) to reduce network/CDN-specific load failures.

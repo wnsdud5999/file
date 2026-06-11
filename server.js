@@ -85,10 +85,20 @@ function serveStatic(res, pathname) {
 }
 
 function sanitizeFileName(name) {
-  const base = path.basename(String(name || '').trim());
-  if (!base) throw new Error('Invalid file name');
-  if (!/^[a-zA-Z0-9._\- ()]+$/.test(base)) throw new Error('Invalid file name');
-  return base;
+  const base = path.basename(String(name || '').normalize('NFC').trim());
+  const cleaned = base
+    .replace(/[\/\\]/g, '_')
+    .replace(/[\u0000-\u001f\u007f]/g, '_')
+    .trim();
+
+  if (!cleaned) throw new Error('Invalid file name');
+  return cleaned;
+}
+
+function contentDisposition(filename) {
+  const safeAscii = String(filename || 'download.bin').replace(/["\r\n]/g, '').replace(/[^ -~]/g, '_') || 'download.bin';
+  const encoded = encodeURIComponent(filename || 'download.bin').replace(/[()]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+  return `attachment; filename="${safeAscii}"; filename*=UTF-8''${encoded}`;
 }
 
 function generateCode() {
@@ -236,7 +246,7 @@ async function handleDownload(res, code) {
   res.writeHead(200, {
     'Content-Type': contentType,
     'Content-Length': buffer.length,
-    'Content-Disposition': `attachment; filename="${String(transfer.original_name || 'download.bin').replace(/"/g, '')}"`
+    'Content-Disposition': contentDisposition(transfer.original_name || 'download.bin')
   });
   res.end(buffer);
 }
