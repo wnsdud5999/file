@@ -98,7 +98,7 @@ let awaitingAdminPassword = false;
 function setStatus(target, message, error = false) {
   if (!target) return;
   target.textContent = message;
-  target.style.color = error ? '#ff6b6b' : '#b8b8c5';
+  target.style.color = error ? 'var(--danger)' : 'var(--text-muted)';
 }
 
 function ensureSupabaseReady(statusTarget = null) {
