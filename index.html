@@ -3,103 +3,510 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Shared Firebase Notes</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <link rel="icon" href="data:," />
+    <title>Private Send</title>
     <style>
       :root {
-        font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-        color: #e4e7ec;
+        --bg: #212121;
+        --surface: #2b2b2b;
+        --surface-2: #303030;
+        --surface-3: #3a3a3a;
+
+        --card: #2b2b2b;
+        --card-hover: #303030;
+
+        --border: #444444;
+        --border-soft: #3a3a3a;
+
+        --text: #ececec;
+        --text-muted: #b4b4b4;
+        --text-subtle: #8f8f8f;
+
+        --accent: #10a37f;
+        --accent-hover: #0e8f70;
+        --accent-soft: #123f35;
+
+        --danger: #ef4444;
+        --warning: #f59e0b;
+        --success: #10a37f;
+
+        --code-bg: #0d1117;
+        --code-surface: #161b22;
+        --code-border: #30363d;
+        --code-text: #e6edf3;
+        --code-muted: #8b949e;
+
+        --radius-sm: 8px;
+        --radius-md: 12px;
+        --radius-lg: 20px;
+        --radius-pill: 999px;
+
+        --font-sans: system-ui, -apple-system, BlinkMacSystemFont,
+          "SF Pro Text", "Segoe UI", Roboto,
+          "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic",
+          sans-serif;
+
+        --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco,
+          Consolas, "Liberation Mono", monospace;
       }
-      body { margin: 0; background: #0b1220; }
-      .container { max-width: 1180px; margin: 28px auto; padding: 0 16px; }
-      .card {
-        background: #101828;
-        border: 1px solid #1d2939;
-        border-radius: 14px;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
-        padding: 18px;
+
+      * {
+        box-sizing: border-box;
       }
-      h1, h2, h3 { margin: 0 0 10px; }
-      .hidden { display: none; }
-      .row { display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
-      input, textarea, button {
-        border: 1px solid #344054;
-        border-radius: 10px;
-        padding: 10px 12px;
+
+      html {
+        color-scheme: dark;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font-sans);
+        font-size: 15px;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+      }
+
+      button,
+      input,
+      textarea,
+      select {
+        font: inherit;
+      }
+
+      .container {
+        width: min(100% - 32px, 1040px);
+        margin: 0 auto;
+        padding: 28px 0;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+        align-items: start;
+      }
+
+      .card,
+      .panel {
+        background: var(--card);
+        border: 1px solid var(--border-soft);
+        border-radius: var(--radius-lg);
+        padding: 20px;
+      }
+
+      .card:hover {
+        background: var(--card-hover);
+      }
+
+      h1 {
+        margin: 0 0 6px;
+        color: var(--text);
+        font-size: 1.05rem;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+
+      p {
+        margin: 0;
+        color: var(--text-muted);
         font-size: 0.92rem;
       }
-      input, textarea {
-        color: #f2f4f7;
-        background: #0c111d;
+
+      .row {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 14px;
       }
-      button { background: #6941c6; color: #fff; border-color: #6941c6; cursor: pointer; }
-      button.secondary { background: #1d2939; color: #d0d5dd; border-color: #344054; }
-      button.danger { background: #b42318; border-color: #b42318; }
-      textarea { width: 100%; min-height: 420px; box-sizing: border-box; resize: vertical; }
-      .status { font-size: 0.9rem; color: #98a2b3; }
-      #loginCard { max-width: 430px; margin: 90px auto; }
-      .appGrid { display: grid; grid-template-columns: 300px 1fr; gap: 14px; }
-      .panel { border: 1px solid #1d2939; border-radius: 12px; padding: 12px; background: #0c111d; }
-      .noteList { list-style: none; padding: 0; margin: 0; max-height: 460px; overflow: auto; }
-      .noteList li { display: flex; justify-content: space-between; gap: 8px; padding: 8px; border-radius: 8px; cursor: pointer; }
-      .noteList li.active { background: #1d2939; }
-      .noteList small { color: #98a2b3; display: block; }
-      .commits { margin-top: 12px; border-top: 1px solid #1d2939; padding-top: 12px; }
-      .commits ul { list-style: none; margin: 0; padding: 0; }
-      .commits li { margin: 8px 0; font-size: 0.9rem; color: #d0d5dd; }
-      ::placeholder { color: #98a2b3; }
-      @media (max-width: 900px) {
-        .appGrid { grid-template-columns: 1fr; }
+
+      input,
+      textarea,
+      select {
+        width: 100%;
+        min-width: 120px;
+        background: var(--surface);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        padding: 11px 13px;
+        outline: none;
+        transition: border-color 120ms ease, background 120ms ease;
+      }
+
+      input {
+        flex: 1;
+      }
+
+      input::placeholder,
+      textarea::placeholder {
+        color: var(--text-subtle);
+      }
+
+      input:focus,
+      textarea:focus,
+      select:focus {
+        background: var(--surface-2);
+        border-color: var(--accent);
+      }
+
+      button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 40px;
+        border-radius: var(--radius-pill);
+        border: 1px solid transparent;
+        padding: 10px 16px;
+        cursor: pointer;
+        background: var(--surface-2);
+        color: var(--text);
+        transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+      }
+
+      button:hover:not(:disabled) {
+        background: var(--surface-3);
+        border-color: var(--border);
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        color: var(--text-subtle);
+        opacity: 0.65;
+      }
+
+      .button-primary {
+        background: var(--text);
+        color: var(--bg);
+      }
+
+      .button-primary:hover {
+        background: #ffffff;
+      }
+
+      .button-secondary {
+        background: var(--surface-2);
+        color: var(--text);
+        border-color: var(--border);
+      }
+
+      .button-secondary:hover {
+        background: var(--surface-3);
+      }
+
+      .button-accent,
+      #downloadBtn,
+      #uploadLoginBtn,
+      #uploadBtn {
+        background: var(--accent);
+        color: #ffffff;
+      }
+
+      .button-accent:hover,
+      #downloadBtn:hover:not(:disabled),
+      #uploadLoginBtn:hover:not(:disabled),
+      #uploadBtn:hover:not(:disabled) {
+        background: var(--accent-hover);
+        border-color: transparent;
+      }
+
+      pre,
+      code,
+      .big-code {
+        font-family: var(--font-mono);
+      }
+
+      pre {
+        background: var(--code-bg);
+        color: var(--code-text);
+        border: 1px solid var(--code-border);
+        border-radius: var(--radius-md);
+        padding: 14px;
+      }
+
+      code {
+        color: var(--code-text);
+      }
+
+      .status {
+        margin-top: 10px;
+        min-height: 20px;
+        color: var(--text-muted);
+        font-size: 0.88rem;
+      }
+
+      .big-code {
+        margin-top: 14px;
+        padding: 14px;
+        background: var(--code-surface);
+        color: var(--code-text);
+        border: 1px solid var(--code-border);
+        border-radius: var(--radius-md);
+        font-size: 0.95rem;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+        white-space: pre-line;
+        line-height: 1.6;
+      }
+
+      .big-code:empty {
+        display: none;
+      }
+
+      .muted {
+        color: var(--text-subtle);
+      }
+
+      .hidden {
+        display: none;
+      }
+
+      .drop-zone {
+        flex: 1;
+        min-width: 240px;
+        background: var(--surface);
+        border: 1px dashed var(--border);
+        border-radius: var(--radius-lg);
+        padding: 18px;
+        text-align: center;
+      }
+
+      .drop-zone:hover {
+        background: var(--surface-2);
+        border-color: var(--accent);
+      }
+
+      .file-picker {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 12px;
+      }
+
+      .file-btn {
+        display: inline-flex;
+        align-items: center;
+        min-height: 38px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-pill);
+        padding: 8px 14px;
+        cursor: pointer;
+        background: var(--surface-2);
+        color: var(--text);
+      }
+
+      .file-btn:hover {
+        background: var(--surface-3);
+      }
+
+      .file-name {
+        max-width: 220px;
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .admin-log-list,
+      .upload-queue,
+      .download-code-list {
+        display: grid;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .admin-log-item,
+      .upload-queue-item {
+        background: var(--surface);
+        border: 1px solid var(--border-soft);
+        border-radius: var(--radius-md);
+        color: var(--text-muted);
+      }
+
+      .admin-log-item {
+        padding: 12px;
+      }
+
+      .admin-log-head {
+        color: var(--text);
+        font-size: 0.9rem;
+        font-weight: 500;
+      }
+
+      .admin-log-meta {
+        margin-top: 6px;
+        color: var(--text-subtle);
+        font-size: 0.8rem;
+      }
+
+      .admin-log-actions {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 10px;
+      }
+
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        border: 0;
+      }
+
+      .upload-queue-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 12px;
+        font-size: 0.86rem;
+      }
+
+      .upload-queue-left {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+      }
+
+      .upload-queue-left > span:first-child {
+        color: var(--text);
+        overflow-wrap: anywhere;
+      }
+
+      .upload-queue-status {
+        color: var(--text-subtle);
+        font-size: 0.78rem;
+      }
+
+      .upload-queue-actions {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex: 0 0 auto;
+      }
+
+      .queue-remove-btn,
+      .small-icon-btn {
+        width: 40px;
+        height: 40px;
+        min-height: 40px;
+        padding: 0;
+        font-weight: 600;
+      }
+
+      .queue-remove-btn {
+        color: var(--text-muted);
+      }
+
+      .queue-remove-btn:hover:not(:disabled) {
+        color: #ffffff;
+        background: rgba(239, 68, 68, 0.18);
+        border-color: rgba(239, 68, 68, 0.4);
+      }
+
+      .queue-retry-btn,
+      .queue-clear-btn {
+        min-height: 34px;
+        padding: 7px 12px;
+        color: var(--text-muted);
+        font-size: 0.8rem;
+      }
+
+      .queue-retry-btn:hover:not(:disabled) {
+        color: #ffffff;
+        background: var(--accent-soft);
+        border-color: var(--accent);
+      }
+
+      .download-code-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .download-code-input {
+        min-width: 90px;
+      }
+
+      @media (max-width: 860px) {
+        .container {
+          width: min(100% - 24px, 1040px);
+          padding: 16px 0;
+        }
+
+        .grid {
+          grid-template-columns: 1fr;
+        }
       }
     </style>
   </head>
   <body>
     <div class="container">
-      <div id="loginCard" class="card">
-        <h1>Enter shared password</h1>
-        <p class="status">This signs into one shared Firebase account for your team.</p>
-        <div class="row">
-          <input id="passwordInput" type="password" placeholder="Password" style="flex: 1" />
-          <button id="loginBtn">Unlock</button>
-        </div>
-        <p id="loginStatus" class="status"></p>
-      </div>
-
-      <div id="appCard" class="card hidden">
-        <div class="row" style="justify-content: space-between; margin-top: 0">
-          <h1>Shared notes</h1>
-          <button id="logoutBtn" class="secondary">Logout</button>
-        </div>
-        <p id="appStatus" class="status">Connected.</p>
-
-        <div class="appGrid">
-          <div class="panel">
-            <div class="row" style="margin-top: 0">
-              <h3 style="margin: 0">Notes</h3>
-              <button id="newNoteBtn" class="secondary">+ New note</button>
+      <div class="grid">
+        <section class="card">
+          <h1>Side A</h1>
+          <p>Enter value.</p>
+          <div id="downloadCodeRows" class="download-code-list">
+            <div class="download-code-row">
+              <input id="downloadCodeInput" class="download-code-input" maxlength="6" inputmode="numeric" />
+              <button id="addDownloadCodeBtn" class="small-icon-btn" type="button" aria-label="Add code">+</button>
+              <button id="downloadBtn" type="button">Go</button>
             </div>
-            <ul id="noteList" class="noteList"></ul>
           </div>
+          <div id="downloadStatus" class="status"></div>
+        </section>
 
-          <div class="panel">
-            <input id="noteTitleInput" placeholder="Note title" style="width: 100%; box-sizing: border-box" />
-            <textarea id="editor" placeholder="Write here..."></textarea>
-
+        <section class="card">
+          <h1>Side B</h1>
+          <p>Restricted area.</p>
+          <div class="row">
+            <input id="uploadLoginPasswordInput" type="password" />
+            <button id="uploadLoginBtn">Enter</button>
+            <button id="uploadLogoutBtn" style="display:none">Exit</button>
+          </div>
+          <div id="uploadAuthStatus" class="status"></div>
+          <div id="uploadActions" class="row hidden">
+            <div id="dropZone" class="drop-zone">
+              <p class="muted">Drop file here</p>
+              <div class="file-picker">
+                <label for="fileInput" class="file-btn">Choose file</label>
+                <span id="selectedFileName" class="file-name">No files selected</span>
+              </div>
+              <input id="fileInput" type="file" class="sr-only" multiple />
+            </div>
+            <button id="uploadBtn">Continue</button>
+          </div>
+          <div class="row">
+            <button id="clearQueueBtn" class="queue-clear-btn" style="display:none">Clear all</button>
+          </div>
+          <div id="uploadQueue" class="upload-queue"></div>
+          <div id="adminPanel" class="hidden">
             <div class="row">
-              <input id="authorInput" placeholder="Your name (optional)" />
-              <input id="messageInput" placeholder="Commit message (optional)" style="flex: 1" />
-              <button id="commitBtn">Commit changes</button>
-              <button id="deleteNoteBtn" class="danger">Delete note</button>
+              <button id="adminRefreshBtn">Refresh</button>
             </div>
-
-            <div class="commits">
-              <h3>Recent commits (selected note)</h3>
-              <ul id="commitList"></ul>
-            </div>
+            <div id="adminLogStatus" class="status"></div>
+            <div id="adminLogList" class="admin-log-list"></div>
           </div>
-        </div>
+          <p id="uploadHint" class="status muted">Locked.</p>
+          <div id="uploadStatus" class="status"></div>
+          <div id="generatedCode" class="big-code"></div>
+        </section>
       </div>
     </div>
 
-    <script type="module" src="./main.js"></script>
+    <script type="module" src="./app.js?v=20260611c"></script>
   </body>
 </html>
