@@ -325,6 +325,11 @@ function cleanFileName(name) {
   return cleaned || 'file.bin';
 }
 
+function cleanAsciiExtension(name) {
+  const match = cleanFileName(name).match(/\.([a-zA-Z0-9]{1,16})$/);
+  return match ? `.${match[1].toLowerCase()}` : '';
+}
+
 function isFresh(createdAt) {
   const age = Date.now() - new Date(createdAt).getTime();
   return Number.isFinite(age) && age <= RETENTION_MS;
@@ -506,6 +511,8 @@ async function uploadSingleFile(queueItem) {
   const uploadResults = [];
   const uploadedPaths = [];
   const totalParts = isSplitUpload ? Math.ceil(file.size / SPLIT_PART_BYTES) : 1;
+  const uploadId = crypto.randomUUID();
+  const extension = cleanAsciiExtension(file.name);
 
   try {
     for (let index = 0; index < totalParts; index += 1) {
@@ -513,7 +520,8 @@ async function uploadSingleFile(queueItem) {
       const end = Math.min(file.size, start + SPLIT_PART_BYTES);
       const partBlob = file.slice(start, end);
       const partName = totalParts === 1 ? cleanFileName(file.name) : makeSplitPartName(file.name, index + 1);
-      const objectPath = `${crypto.randomUUID()}-${partName}`;
+      const storagePartName = `${String(index + 1).padStart(3, '0')}${extension}`;
+      const objectPath = `${uploadId}/${storagePartName}`;
 
       const { error: uploadError } = await supabase.storage.from(BUCKET).upload(objectPath, partBlob, { upsert: false });
       if (uploadError) throw uploadError;

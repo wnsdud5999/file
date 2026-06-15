@@ -95,6 +95,11 @@ function sanitizeFileName(name) {
   return cleaned;
 }
 
+function cleanAsciiExtension(name) {
+  const match = sanitizeFileName(name).match(/\.([a-zA-Z0-9]{1,16})$/);
+  return match ? `.${match[1].toLowerCase()}` : '';
+}
+
 function contentDisposition(filename) {
   const safeAscii = String(filename || 'download.bin').replace(/["\r\n]/g, '').replace(/[^ -~]/g, '_') || 'download.bin';
   const encoded = encodeURIComponent(filename || 'download.bin').replace(/[()]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
@@ -206,7 +211,7 @@ async function handleUpload(req, res) {
   if (buffer.length > MAX_UPLOAD_BYTES) return json(res, 400, { error: 'File too large (max 50 MB)' });
 
   const code = await createUniqueCode();
-  const objectPath = `${crypto.randomUUID()}-${fileName}`;
+  const objectPath = `${crypto.randomUUID()}/001${cleanAsciiExtension(fileName)}`;
 
   await uploadToStorage(objectPath, buffer, contentType);
   await insertTransfer({

@@ -456,6 +456,72 @@
         }
       }
 
+      .upload-queue-status {
+        color: var(--text-subtle);
+        font-size: 0.78rem;
+      }
+
+      .upload-queue-actions {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex: 0 0 auto;
+      }
+
+      .queue-remove-btn,
+      .small-icon-btn {
+        width: 40px;
+        height: 40px;
+        min-height: 40px;
+        padding: 0;
+        font-weight: 600;
+      }
+
+      .queue-remove-btn {
+        color: var(--text-muted);
+      }
+
+      .queue-remove-btn:hover:not(:disabled) {
+        color: #ffffff;
+        background: rgba(239, 68, 68, 0.18);
+        border-color: rgba(239, 68, 68, 0.4);
+      }
+
+      .queue-retry-btn,
+      .queue-clear-btn {
+        min-height: 34px;
+        padding: 7px 12px;
+        color: var(--text-muted);
+        font-size: 0.8rem;
+      }
+
+      .queue-retry-btn:hover:not(:disabled) {
+        color: #ffffff;
+        background: var(--accent-soft);
+        border-color: var(--accent);
+      }
+
+      .download-code-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .download-code-input {
+        min-width: 90px;
+      }
+
+      @media (max-width: 860px) {
+        .container {
+          width: min(100% - 24px, 1040px);
+          padding: 16px 0;
+        }
+
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
       .queue-retry-btn,
       .queue-clear-btn {
         min-height: 34px;
@@ -584,6 +650,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260611d"></script>
+    <script type="module" src="./app.js?v=20260615a"></script>
   </body>
 </html>

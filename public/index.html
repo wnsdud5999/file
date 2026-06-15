@@ -629,6 +629,180 @@
           grid-template-columns: 1fr;
         }
       }
+
+      .drop-zone:hover {
+        background: var(--surface-2);
+        border-color: var(--accent);
+      }
+
+      .file-picker {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 12px;
+      }
+
+      .file-btn {
+        display: inline-flex;
+        align-items: center;
+        min-height: 38px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-pill);
+        padding: 8px 14px;
+        cursor: pointer;
+        background: var(--surface-2);
+        color: var(--text);
+      }
+
+      .file-btn:hover {
+        background: var(--surface-3);
+      }
+
+      .file-name {
+        max-width: 220px;
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .admin-log-list,
+      .upload-queue,
+      .download-code-list {
+        display: grid;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .admin-log-item,
+      .upload-queue-item {
+        background: var(--surface);
+        border: 1px solid var(--border-soft);
+        border-radius: var(--radius-md);
+        color: var(--text-muted);
+      }
+
+      .admin-log-item {
+        padding: 12px;
+      }
+
+      .admin-log-head {
+        color: var(--text);
+        font-size: 0.9rem;
+        font-weight: 500;
+      }
+
+      .admin-log-meta {
+        margin-top: 6px;
+        color: var(--text-subtle);
+        font-size: 0.8rem;
+      }
+
+      .admin-log-actions {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 10px;
+      }
+
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        border: 0;
+      }
+
+      .upload-queue-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 12px;
+        font-size: 0.86rem;
+      }
+
+      .upload-queue-left {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+      }
+
+      .upload-queue-left > span:first-child {
+        color: var(--text);
+        overflow-wrap: anywhere;
+      }
+
+      .upload-queue-status {
+        color: var(--text-subtle);
+        font-size: 0.78rem;
+      }
+
+      .upload-queue-actions {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex: 0 0 auto;
+      }
+
+      .queue-remove-btn,
+      .small-icon-btn {
+        width: 40px;
+        height: 40px;
+        min-height: 40px;
+        padding: 0;
+        font-weight: 600;
+      }
+
+      .queue-remove-btn {
+        color: var(--text-muted);
+      }
+
+      .queue-remove-btn:hover:not(:disabled) {
+        color: #ffffff;
+        background: rgba(239, 68, 68, 0.18);
+        border-color: rgba(239, 68, 68, 0.4);
+      }
+
+      .queue-retry-btn,
+      .queue-clear-btn {
+        min-height: 34px;
+        padding: 7px 12px;
+        color: var(--text-muted);
+        font-size: 0.8rem;
+      }
+
+      .queue-retry-btn:hover:not(:disabled) {
+        color: #ffffff;
+        background: var(--accent-soft);
+        border-color: var(--accent);
+      }
+
+      .download-code-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .download-code-input {
+        min-width: 90px;
+      }
+
+      @media (max-width: 860px) {
+        .container {
+          width: min(100% - 24px, 1040px);
+          padding: 16px 0;
+        }
+
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
       .upload-queue-left {
         display: grid;
         gap: 4px;
@@ -736,6 +910,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260611d"></script>
+    <script type="module" src="./app.js?v=20260615a"></script>
   </body>
 </html>
